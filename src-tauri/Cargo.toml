@@ -92,6 +92,9 @@ tauri-plugin-dialog = "2.6"
 hf-hub = { git = "https://github.com/cjpais/hf-hub", branch = "cancellable-downloads", features = [
   "tokio",
 ] }
+# Read aloud: the Supertonic 3 voice model, run in the speech worker process.
+# GPL-free since 2.0 (espeak-ng was removed).
+sherpa-onnx = "2.0.1"
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.3"
@@ -119,6 +122,7 @@ windows = { version = "0.61.3", features = [
   "Win32_System_Variant",
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
+  "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_WindowsAndMessaging",
 ] }
 winreg = "0.55"

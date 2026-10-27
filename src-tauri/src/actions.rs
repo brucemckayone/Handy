@@ -547,6 +547,8 @@ impl ShortcutAction for TranscribeAction {
                 if let Some(meeting) = crate::meeting::manager(app) {
                     meeting.dictation_started();
                 }
+                // Stop reading aloud, or the mic would hear it.
+                crate::speech::stop(app);
                 let generation = readiness.generation();
                 let app_clone = app.clone();
                 let rm_clone = Arc::clone(&rm);
@@ -996,6 +998,10 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     map.insert(
         "meeting_bookmark".to_string(),
         Arc::new(crate::meeting::MeetingBookmarkAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "read_aloud".to_string(),
+        Arc::new(crate::speech::ReadAloudAction) as Arc<dyn ShortcutAction>,
     );
     map
 });

@@ -359,6 +359,10 @@
           "meeting_bookmark": {
             "name": "Bookmark a Meeting",
             "description": "Bookmarks what was just said in the meeting being recorded."
+          },
+          "read_aloud": {
+            "name": "Read Aloud",
+            "description": "Reads the selected text aloud, or stops reading."
           }
         },
         "errors": {
@@ -1216,5 +1220,13 @@
       "transcript": "Transcript",
       "leftOut": "{{seconds}} s dictated into another app, left out"
     }
+  },
+  "speech": {
+    "refused": {
+      "not_installed": "Download a voice in Settings, Read aloud, first.",
+      "quiet_in_meeting": "Not reading aloud while a meeting is recording.",
+      "nothing_to_read": "Select some text first, then press the shortcut."
+    },
+    "failed": "Reading aloud failed: {{error}}"
   }
 }

@@ -1159,6 +1159,45 @@ async saveMeetingMarkdown(path: string, contents: string) : Promise<Result<null,
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async getSpeechModelStatus() : Promise<SpeechModelStatus> {
+    return await TAURI_INVOKE("get_speech_model_status");
+},
+async downloadSpeechModel() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("download_speech_model") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Reads `text` after anything already queued.
+ */
+async speakText(text: string) : Promise<Result<null, SpeakRefusal>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("speak_text", { text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stops reading and clears the queue.
+ */
+async stopSpeaking() : Promise<void> {
+    await TAURI_INVOKE("stop_speaking");
+},
+async isSpeaking() : Promise<boolean> {
+    return await TAURI_INVOKE("is_speaking");
+},
+async changeSpeechSettings(settings: SpeechSettings) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_speech_settings", { settings }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -1174,6 +1213,9 @@ meetingPromptEvent: MeetingPromptEvent,
 meetingRecordingEvent: MeetingRecordingEvent,
 recordingStateEvent: RecordingStateEvent,
 speakerModelEvent: SpeakerModelEvent,
+speechModelEvent: SpeechModelEvent,
+speechRefusedEvent: SpeechRefusedEvent,
+speechStateEvent: SpeechStateEvent,
 streamPhaseEvent: StreamPhaseEvent,
 streamTextEvent: StreamTextEvent,
 transcriptionCompleteEvent: TranscriptionCompleteEvent,
@@ -1187,6 +1229,9 @@ meetingPromptEvent: "meeting-prompt-event",
 meetingRecordingEvent: "meeting-recording-event",
 recordingStateEvent: "recording-state-event",
 speakerModelEvent: "speaker-model-event",
+speechModelEvent: "speech-model-event",
+speechRefusedEvent: "speech-refused-event",
+speechStateEvent: "speech-state-event",
 streamPhaseEvent: "stream-phase-event",
 streamTextEvent: "stream-text-event",
 transcriptionCompleteEvent: "transcription-complete-event",
@@ -1282,7 +1327,7 @@ long_form_chunking?: boolean;
  * not gated on this — that follows model capability. Migrated from the old
  * `overlay_position` (position `none` → style `None`).
  */
-overlay_style?: OverlayStyle; meeting?: MeetingSettings }
+overlay_style?: OverlayStyle; meeting?: MeetingSettings; speech?: SpeechSettings }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; gpu_devices: GpuDeviceOption[] }
@@ -1641,6 +1686,22 @@ export type ShortcutActivation =
 "hold_or_toggle"
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
 export type SoundTheme = "marimba" | "pop" | "custom"
+/**
+ * Why something wasn't read.
+ */
+export type SpeakRefusal = 
+/**
+ * The voice model hasn't been downloaded.
+ */
+"not_installed" | 
+/**
+ * A meeting is recording; the call audio would record the speech.
+ */
+"quiet_in_meeting" | 
+/**
+ * Nothing was left to read after the clean-up.
+ */
+"nothing_to_read"
 export type Speaker = { id: string; 
 /**
  * A name given for this meeting only; `None` shows the default label.
@@ -1651,6 +1712,39 @@ name: string | null }
  */
 export type SpeakerModelEvent = { downloaded: number; total: number; done: boolean; error: string | null }
 export type SpeakerModelStatus = { installed: boolean; size_bytes: number }
+/**
+ * Progress of the voice model download.
+ */
+export type SpeechModelEvent = { downloaded: number; total: number; done: boolean; error: string | null }
+export type SpeechModelStatus = { installed: boolean; bytes: number; voices: string[] }
+/**
+ * Something wasn't read, and why.
+ */
+export type SpeechRefusedEvent = { refusal: SpeakRefusal }
+/**
+ * Read aloud. One nested object, so the settings store keeps one key.
+ */
+export type SpeechSettings = { 
+/**
+ * Which of the voice model's stock voices to use.
+ */
+voice: number; 
+/**
+ * 1.0 is the voice model's own pace.
+ */
+speed: number; 
+/**
+ * Longer text stops at about this many words.
+ */
+max_words: number; 
+/**
+ * Say nothing while a meeting records: the call audio would record it.
+ */
+quiet_during_meetings: boolean }
+/**
+ * Whether Handy is speaking, for the speaking pill and the tray.
+ */
+export type SpeechStateEvent = { speaking: boolean }
 /**
  * Phase of the streaming overlay card, emitted to drive its UI state.
  */

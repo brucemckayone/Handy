@@ -35,7 +35,7 @@ import { Sidebar, SidebarSection, SECTIONS_CONFIG } from "./components/Sidebar";
 import { WhatsNewGate } from "./components/whats-new";
 import { useSettings } from "./hooks/useSettings";
 import { useSettingsStore } from "./stores/settingsStore";
-import { commands } from "@/bindings";
+import { commands, events } from "@/bindings";
 import { deleteRetiredModel } from "@/lib/models/retired";
 import { getLanguageDirection, initializeRTL } from "@/lib/utils/rtl";
 
@@ -114,9 +114,17 @@ function App() {
     const unlistenError = listen<string>("meeting-error", (event) =>
       toast.error(t("meetings.startFailed", { error: event.payload })),
     );
+    const unlistenRefused = events.speechRefusedEvent.listen((event) =>
+      toast(t(`speech.refused.${event.payload.refusal}`)),
+    );
+    const unlistenSpeechError = listen<string>("speech-error", (event) =>
+      toast.error(t("speech.failed", { error: event.payload })),
+    );
     return () => {
       unlistenOpen.then((fn) => fn());
       unlistenError.then((fn) => fn());
+      unlistenRefused.then((fn) => fn());
+      unlistenSpeechError.then((fn) => fn());
     };
   }, [t]);
 

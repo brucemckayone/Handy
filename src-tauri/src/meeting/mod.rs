@@ -207,6 +207,13 @@ impl MeetingManager {
         if self.is_recording() || self.starting.swap(true, Ordering::AcqRel) {
             return Err(anyhow!("A meeting is already being recorded"));
         }
+        // Handy reading aloud would be recorded as the call audio.
+        if crate::settings::get_settings(&self.app)
+            .speech
+            .quiet_during_meetings
+        {
+            crate::speech::stop(&self.app);
+        }
         // Opening devices takes a moment; nothing waits on `active` for it.
         let opened = self.open();
         self.starting.store(false, Ordering::Release);

@@ -100,6 +100,24 @@ fn play_audio_file(
     selected_device: Option<String>,
     volume: f32,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let device_sink = open_output(selected_device)?;
+    let mixer = device_sink.mixer();
+
+    let file = File::open(path)?;
+    let buf_reader = BufReader::new(file);
+
+    let player = rodio::play(mixer, buf_reader)?;
+    player.set_volume(volume);
+    player.sleep_until_end();
+
+    Ok(())
+}
+
+/// Opens the chosen output device (by name; `None` or "Default" for the
+/// system default), falling back to the default if it's gone.
+pub(crate) fn open_output(
+    selected_device: Option<String>,
+) -> Result<rodio::MixerDeviceSink, Box<dyn std::error::Error>> {
     let sink_builder = if let Some(device_name) = selected_device {
         if device_name == "Default" {
             debug!("Using default device");
@@ -123,15 +141,5 @@ fn play_audio_file(
         DeviceSinkBuilder::from_default_device()?
     };
 
-    let device_sink = sink_builder.open_stream()?;
-    let mixer = device_sink.mixer();
-
-    let file = File::open(path)?;
-    let buf_reader = BufReader::new(file);
-
-    let player = rodio::play(mixer, buf_reader)?;
-    player.set_volume(volume);
-    player.sleep_until_end();
-
-    Ok(())
+    Ok(sink_builder.open_stream()?)
 }

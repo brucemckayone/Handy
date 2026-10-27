@@ -404,6 +404,31 @@ impl Default for MeetingSettings {
     }
 }
 
+/// Read aloud. One nested object, so the settings store keeps one key.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
+#[serde(default)]
+pub struct SpeechSettings {
+    /// Which of the voice model's stock voices to use.
+    pub voice: u32,
+    /// 1.0 is the voice model's own pace.
+    pub speed: f32,
+    /// Longer text stops at about this many words.
+    pub max_words: u32,
+    /// Say nothing while a meeting records: the call audio would record it.
+    pub quiet_during_meetings: bool,
+}
+
+impl Default for SpeechSettings {
+    fn default() -> Self {
+        Self {
+            voice: 0,
+            speed: 1.1,
+            max_words: 300,
+            quiet_during_meetings: true,
+        }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize, Type)]
 #[serde(transparent)]
 pub(crate) struct SecretMap(HashMap<String, String>);
@@ -606,6 +631,8 @@ pub struct AppSettings {
     pub overlay_style: OverlayStyle,
     #[serde(default)]
     pub meeting: MeetingSettings,
+    #[serde(default)]
+    pub speech: SpeechSettings,
 }
 
 fn default_model() -> String {
@@ -1055,6 +1082,20 @@ pub fn get_default_settings() -> AppSettings {
             current_binding: bookmark_shortcut.to_string(),
         },
     );
+    #[cfg(target_os = "macos")]
+    let read_aloud_shortcut = "ctrl+option+r";
+    #[cfg(not(target_os = "macos"))]
+    let read_aloud_shortcut = "ctrl+alt+r";
+    bindings.insert(
+        "read_aloud".to_string(),
+        ShortcutBinding {
+            id: "read_aloud".to_string(),
+            name: "Read Aloud".to_string(),
+            description: "Reads the selected text aloud, or stops reading.".to_string(),
+            default_binding: read_aloud_shortcut.to_string(),
+            current_binding: read_aloud_shortcut.to_string(),
+        },
+    );
 
     AppSettings {
         settings_schema_version: default_settings_schema_version(),
@@ -1122,6 +1163,7 @@ pub fn get_default_settings() -> AppSettings {
         long_form_chunking: default_long_form_chunking(),
         overlay_style: default_overlay_style(),
         meeting: MeetingSettings::default(),
+        speech: SpeechSettings::default(),
     }
 }
 

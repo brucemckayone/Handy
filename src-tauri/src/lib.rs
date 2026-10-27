@@ -23,6 +23,7 @@ mod secure_input;
 mod settings;
 mod shortcut;
 mod signal_handle;
+pub mod speech;
 mod system_languages;
 mod transcription_coordinator;
 mod tray;
@@ -225,6 +226,15 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             }
         }
         Err(e) => log::error!("Failed to set up meetings: {}", e),
+    }
+    app_handle.manage(speech::SpeechManager::new(app_handle));
+    // Text saved by `handy --speak` when Handy wasn't running; anything else
+    // there is left over from an earlier run.
+    let spooled = speech::spool::take();
+    if speech::spool::requested(&app_handle.state::<CliArgs>()) {
+        for text in spooled {
+            speech::speak(app_handle, &text);
+        }
     }
 
     // Note: Shortcuts are NOT initialized here.
@@ -651,7 +661,7 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run(cli_args: CliArgs) {
+pub fn run(mut cli_args: CliArgs) {
     // Avoid ggml-metal residency-set teardown assertions when a native engine
     // outlives the Tauri shutdown sequence (#1902). This must happen before
     // transcribe-cpp initializes its Metal device. Advanced users can restore
@@ -672,6 +682,18 @@ pub fn run(cli_args: CliArgs) {
 
     // Detect portable mode before anything else
     portable::init();
+
+    // `handy --speak ...`: save the text for whichever Handy will read it (the
+    // running one, or this one if none is), and don't open the window for it.
+    let speech_request = speech::spool::requested(&cli_args);
+    if speech_request {
+        if let Err(e) = speech::spool::save(&cli_args) {
+            eprintln!("Couldn't pass the text on to be read: {e}");
+        }
+    }
+    if speech_request || cli_args.stop_speaking {
+        cli_args.start_hidden = true;
+    }
 
     // Parse console logging directives from RUST_LOG, falling back to info-level logging
     // when the variable is unset
@@ -826,6 +848,12 @@ pub fn run(cli_args: CliArgs) {
             meeting::commands::open_meetings,
             meeting::commands::copy_meeting_text,
             meeting::commands::save_meeting_markdown,
+            speech::commands::get_speech_model_status,
+            speech::commands::download_speech_model,
+            speech::commands::speak_text,
+            speech::commands::stop_speaking,
+            speech::commands::is_speaking,
+            speech::commands::change_speech_settings,
         ])
         .events(collect_events![
             managers::history::HistoryUpdatePayload,
@@ -840,6 +868,9 @@ pub fn run(cli_args: CliArgs) {
             meeting::widgets::MeetingPromptEvent,
             meeting::widgets::MeetingPillMessageEvent,
             meeting::speakers::SpeakerModelEvent,
+            speech::model::SpeechModelEvent,
+            speech::SpeechStateEvent,
+            speech::SpeechRefusedEvent,
         ]);
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds
@@ -927,6 +958,13 @@ pub fn run(cli_args: CliArgs) {
                 signal_handle::send_transcription_input(app, "transcribe_with_post_process", "CLI");
             } else if args.iter().any(|a| a == "--cancel") {
                 crate::utils::cancel_current_operation(app);
+            } else if args.iter().any(|a| a == "--stop-speaking") {
+                speech::spool::take();
+                speech::stop(app);
+            } else if speech::spool::requested_in(&args) {
+                for text in speech::spool::take() {
+                    speech::speak(app, &text);
+                }
             } else {
                 // A second process was launched without remote-control flags
                 // (e.g. the binary run from a shell). On macOS, relaunching the

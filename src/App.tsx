@@ -106,6 +106,20 @@ function App() {
     checkOnboardingStatus();
   }, []);
 
+  // The tray's "Open Meetings" and the call prompt's link land here.
+  useEffect(() => {
+    const unlistenOpen = listen("open-meetings", () =>
+      setCurrentSection("meetings"),
+    );
+    const unlistenError = listen<string>("meeting-error", (event) =>
+      toast.error(t("meetings.startFailed", { error: event.payload })),
+    );
+    return () => {
+      unlistenOpen.then((fn) => fn());
+      unlistenError.then((fn) => fn());
+    };
+  }, [t]);
+
   // Initialize RTL direction when language changes
   useEffect(() => {
     initializeRTL(i18n.language);

@@ -543,6 +543,10 @@ impl ShortcutAction for TranscribeAction {
                     "Recording request accepted in {:?}; waiting for first microphone samples",
                     recording_start_time.elapsed()
                 );
+                // A meeting leaves what is dictated into other apps out.
+                if let Some(meeting) = crate::meeting::manager(app) {
+                    meeting.dictation_started();
+                }
                 let generation = readiness.generation();
                 let app_clone = app.clone();
                 let rm_clone = Arc::clone(&rm);
@@ -627,6 +631,10 @@ impl ShortcutAction for TranscribeAction {
 
         // Unregister the cancel shortcut when transcription stops
         shortcut::unregister_cancel_shortcut(app);
+
+        if let Some(meeting) = crate::meeting::manager(app) {
+            meeting.dictation_stopped();
+        }
 
         let stop_time = Instant::now();
         debug!("TranscribeAction::stop called for binding: {}", binding_id);
@@ -776,6 +784,10 @@ impl ShortcutAction for TranscribeAction {
                                 utils::hide_recording_overlay(&ah);
                                 set_tray_state(&ah, TrayIconState::Idle);
                                 return;
+                            }
+
+                            if let Some(meeting) = crate::meeting::manager(&ah) {
+                                meeting.dictation_transcribed(&transcription);
                             }
 
                             // Save to history if WAV was saved
@@ -976,6 +988,14 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     map.insert(
         "test".to_string(),
         Arc::new(TestAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "meeting_toggle".to_string(),
+        Arc::new(crate::meeting::MeetingToggleAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "meeting_bookmark".to_string(),
+        Arc::new(crate::meeting::MeetingBookmarkAction) as Arc<dyn ShortcutAction>,
     );
     map
 });

@@ -32,6 +32,10 @@ fn main() {
     if handy_app_lib::engine_supervisor::is_worker_invocation() {
         std::process::exit(handy_app_lib::engine_supervisor::run_worker());
     }
+    // Meeting speaker labelling worker, isolated the same way.
+    if handy_app_lib::meeting::speakers::is_worker_invocation() {
+        std::process::exit(handy_app_lib::meeting::speakers::run_worker());
+    }
 
     let cli_args = CliArgs::parse();
     handy_app_lib::run(cli_args)

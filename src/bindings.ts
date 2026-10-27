@@ -986,6 +986,179 @@ async isLaptop() : Promise<Result<boolean, string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async startMeeting() : Promise<Result<RecordingInfo, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("start_meeting") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async stopMeeting() : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("stop_meeting") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async addMeetingBookmark() : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("add_meeting_bookmark") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getMeetingRecording() : Promise<RecordingInfo | null> {
+    return await TAURI_INVOKE("get_meeting_recording");
+},
+async listMeetings(query: string | null) : Promise<Result<MeetingListItem[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_meetings", { query }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getMeeting(id: string) : Promise<Result<Meeting | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_meeting", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async renameMeeting(id: string, title: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("rename_meeting", { id, title }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Names a speaker for this meeting only; `None` or empty goes back to the
+ * default label.
+ */
+async renameMeetingSpeaker(id: string, speaker: string, name: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("rename_meeting_speaker", { id, speaker, name }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setMeetingStarred(id: string, starred: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_meeting_starred", { id, starred }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setMeetingActionDone(id: string, index: number, done: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_meeting_action_done", { id, index, done }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteMeeting(id: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_meeting", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Transcribes an interrupted or failed meeting from the audio it kept.
+ */
+async retryMeeting(id: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("retry_meeting", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async summariseMeeting(id: string, engine: SummaryEngine | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("summarise_meeting", { id, engine }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeMeetingSettings(settings: MeetingSettings) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_meeting_settings", { settings }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getMeetingOutputInfo() : Promise<MeetingOutputInfo> {
+    return await TAURI_INVOKE("get_meeting_output_info");
+},
+/**
+ * Where Claude Code is installed, if Handy can find it.
+ */
+async findClaudeCode() : Promise<string | null> {
+    return await TAURI_INVOKE("find_claude_code");
+},
+async getSpeakerModelStatus() : Promise<SpeakerModelStatus> {
+    return await TAURI_INVOKE("get_speaker_model_status");
+},
+/**
+ * Downloads the model that tells speakers apart. Only when the user asks.
+ */
+async downloadSpeakerModel() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("download_speaker_model") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async respondToMeetingPrompt(choice: PromptChoice, call: CallApp | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("respond_to_meeting_prompt", { choice, call }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getMeetingPromptState() : Promise<PromptState | null> {
+    return await TAURI_INVOKE("get_meeting_prompt_state");
+},
+/**
+ * Opens the Meetings page in the main window.
+ */
+async openMeetings() : Promise<void> {
+    await TAURI_INVOKE("open_meetings");
+},
+async copyMeetingText(text: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("copy_meeting_text", { text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Writes an exported meeting to the file the user picked.
+ */
+async saveMeetingMarkdown(path: string, contents: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_meeting_markdown", { path, contents }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -994,14 +1167,26 @@ async isLaptop() : Promise<Result<boolean, string>> {
 
 export const events = __makeEvents__<{
 historyUpdatePayload: HistoryUpdatePayload,
+meetingChangedEvent: MeetingChangedEvent,
+meetingLevelsEvent: MeetingLevelsEvent,
+meetingPillMessageEvent: MeetingPillMessageEvent,
+meetingPromptEvent: MeetingPromptEvent,
+meetingRecordingEvent: MeetingRecordingEvent,
 recordingStateEvent: RecordingStateEvent,
+speakerModelEvent: SpeakerModelEvent,
 streamPhaseEvent: StreamPhaseEvent,
 streamTextEvent: StreamTextEvent,
 transcriptionCompleteEvent: TranscriptionCompleteEvent,
 transcriptionJob: TranscriptionJob
 }>({
 historyUpdatePayload: "history-update-payload",
+meetingChangedEvent: "meeting-changed-event",
+meetingLevelsEvent: "meeting-levels-event",
+meetingPillMessageEvent: "meeting-pill-message-event",
+meetingPromptEvent: "meeting-prompt-event",
+meetingRecordingEvent: "meeting-recording-event",
 recordingStateEvent: "recording-state-event",
+speakerModelEvent: "speaker-model-event",
 streamPhaseEvent: "stream-phase-event",
 streamTextEvent: "stream-text-event",
 transcriptionCompleteEvent: "transcription-complete-event",
@@ -1014,6 +1199,11 @@ transcriptionJob: "transcription-job"
 
 /** user-defined types **/
 
+export type ActionItem = { text: string; 
+/**
+ * A speaker id when the owner is one of the speakers, else a name.
+ */
+owner: string | null; due: string | null; at_ms: number | null; done: boolean }
 /**
  * The container-level `serde(default)` (backed by the `Default` impl below)
  * guarantees every field — including ones added in the future — falls back to
@@ -1092,11 +1282,27 @@ long_form_chunking?: boolean;
  * not gated on this — that follows model capability. Migrated from the old
  * `overlay_position` (position `none` → style `None`).
  */
-overlay_style?: OverlayStyle }
+overlay_style?: OverlayStyle; meeting?: MeetingSettings }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; gpu_devices: GpuDeviceOption[] }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
+export type Bookmark = { start_ms: number; end_ms: number }
+export type BookmarkNote = { start_ms: number; label: string }
+export type CallApp = "teams" | "zoom" | "browser"
+/**
+ * Something that went wrong while recording, shown with the meeting.
+ */
+export type CaptureProblem = { at_ms: number; 
+/**
+ * `me` or `them`.
+ */
+track: string; 
+/**
+ * `device_lost`, `device_reopened`, `device_unavailable` or
+ * `device_missing_used_default`; the UI words it.
+ */
+kind: string }
 /**
  * Script applied to Mandarin and Cantonese output. Traditional carries its region
  * (Taiwan vs Hong Kong forms, e.g. 裡/裏) rather than guessing it.
@@ -1116,6 +1322,16 @@ export type ChineseScript =
 "traditional_hk"
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
 export type CustomSounds = { start: boolean; stop: boolean }
+export type Decision = { text: string; at_ms: number | null }
+/**
+ * Time the user spent dictating into another app during the meeting. The
+ * mic audio over it is left out of the transcript.
+ */
+export type DictationSpan = { start_ms: number; end_ms: number; 
+/**
+ * What was dictated, once the dictation is transcribed.
+ */
+text: string | null }
 export type GpuDeviceOption = { id: string; name: string; total_vram_mb: number }
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean; 
 /**
@@ -1140,6 +1356,107 @@ key_down: number; key_up: number; flags_changed: number; mouse: number; duration
 export type KeyboardImplementation = "tauri" | "handy_keys"
 export type LLMPrompt = { id: string; name: string; prompt: string }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
+export type Meeting = { id: string; title: string; 
+/**
+ * The title is still the one the summary suggested (or the default).
+ */
+title_is_suggested: boolean; 
+/**
+ * Unix milliseconds.
+ */
+started_at: number; duration_ms: number; status: MeetingStatus; 
+/**
+ * Percent of the audio transcribed, while transcribing.
+ */
+progress: number | null; error: string | null; starred: boolean; 
+/**
+ * The recorded audio is still on disk.
+ */
+has_audio: boolean; segments: TranscriptSegment[]; speakers: Speaker[]; bookmarks: Bookmark[]; dictations: DictationSpan[]; summary: MeetingSummary | null; summary_error: string | null; tracks: TrackTiming[]; problems: CaptureProblem[] }
+/**
+ * Sent when a meeting changes; `meeting` is `None` once it is deleted.
+ */
+export type MeetingChangedEvent = { id: string; meeting: MeetingListItem | null }
+/**
+ * Peak level of each track over the last tenth of a second, 0..1.
+ */
+export type MeetingLevelsEvent = { me: number; them: number }
+/**
+ * One row of the Meetings list.
+ */
+export type MeetingListItem = { id: string; title: string; started_at: number; duration_ms: number; status: MeetingStatus; progress: number | null; error: string | null; starred: boolean; has_audio: boolean; speaker_count: number; bookmark_count: number; open_actions: number; overview: string | null }
+/**
+ * What the meeting's call audio plays through, for the headphones advice.
+ */
+export type MeetingOutputInfo = { name: string | null; 
+/**
+ * The mic will hear other people too, so they may be transcribed twice.
+ */
+is_speakers: boolean }
+/**
+ * A short message on the pill, such as "bookmarked".
+ */
+export type MeetingPillMessageEvent = { message: string }
+/**
+ * The prompt's state; `None` hides it.
+ */
+export type MeetingPromptEvent = { state: PromptState | null }
+/**
+ * Sent when a meeting starts or stops recording, or gains a bookmark.
+ */
+export type MeetingRecordingEvent = { recording: RecordingInfo | null }
+/**
+ * Meeting capture. One nested object, so the settings store keeps one key.
+ */
+export type MeetingSettings = { 
+/**
+ * Microphone for meetings; `None` uses the dictation microphone.
+ */
+microphone: string | null; 
+/**
+ * Output device whose sound is recorded as the call audio; `None` uses
+ * the Windows default output.
+ */
+output_device: string | null; 
+/**
+ * How far back a bookmark reaches.
+ */
+bookmark_seconds: number; 
+/**
+ * Offer to record when a call app starts using the mic.
+ */
+ask_when_call_starts: boolean; detect_teams: boolean; detect_zoom: boolean; detect_browser: boolean; 
+/**
+ * Stop recording, after a countdown, when the call app releases the mic.
+ */
+stop_when_call_ends: boolean; 
+/**
+ * Tell the people on the call audio apart (Speaker 1-4).
+ */
+label_speakers: boolean; 
+/**
+ * Leave what the user dictates into other apps out of the transcript.
+ */
+leave_out_dictation: boolean; summarise_automatically: boolean; summary_engine: SummaryEngine; summary_prompt: string }
+export type MeetingStatus = "recording" | 
+/**
+ * Handy closed while it was recording; the audio up to then is kept
+ * until the user transcribes or discards it.
+ */
+"interrupted" | 
+/**
+ * Queued behind another transcription.
+ */
+"waiting" | "transcribing" | 
+/**
+ * Telling the other speakers apart.
+ */
+"labelling" | "summarising" | "ready" | "failed"
+export type MeetingSummary = { overview: string; decisions: Decision[]; action_items: ActionItem[]; bookmarks: BookmarkNote[]; engine: SummaryEngine; 
+/**
+ * Unix milliseconds.
+ */
+created_at: number }
 export type ModelInfo = { id: string; name: string; description: string; filename: string; source: ModelSource; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[]; supports_language_selection: boolean; is_custom: boolean; supports_streaming: boolean; supports_language_detection: boolean }
 export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }
 /**
@@ -1192,6 +1509,58 @@ export type PostProcessApiFormat =
  */
 "anthropic"
 export type PostProcessProvider = { id: string; label: string; base_url: string; allow_base_url_edit?: boolean; models_endpoint?: string | null; supports_structured_output?: boolean; api_format?: PostProcessApiFormat }
+/**
+ * What the user chose in the prompt.
+ */
+export type PromptChoice = "record" | "not_now" | 
+/**
+ * Stop asking for this app (it can be turned back on in settings).
+ */
+"never" | 
+/**
+ * Undo "Never".
+ */
+"undo" | "keep_recording" | "stop_now" | "close"
+/**
+ * What the call prompt shows.
+ */
+export type PromptState = 
+/**
+ * A call app started using the mic: record it?
+ */
+{ state: "ask_start"; app: CallApp } | 
+/**
+ * Recording, started from the prompt.
+ */
+{ state: "recording" } | 
+/**
+ * The user said never to ask for this app.
+ */
+{ state: "never"; app: CallApp } | 
+/**
+ * The call ended; the meeting stops in `seconds`.
+ */
+{ state: "ask_end"; app: CallApp; seconds: number } | 
+/**
+ * The meeting stopped and is being transcribed.
+ */
+{ state: "saved"; minutes: number } | 
+/**
+ * The user kept recording after the call seemed to end.
+ */
+{ state: "kept" }
+/**
+ * The meeting being recorded, for the tray, the pill and the Meetings page.
+ */
+export type RecordingInfo = { id: string; 
+/**
+ * Unix milliseconds.
+ */
+started_at: number; bookmarks: number; 
+/**
+ * A dictation is under way, so the pill shows it too.
+ */
+dictating: boolean }
 /**
  * Recording phase events for windows that follow along (onboarding's Try it).
  */
@@ -1272,6 +1641,16 @@ export type ShortcutActivation =
 "hold_or_toggle"
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
 export type SoundTheme = "marimba" | "pop" | "custom"
+export type Speaker = { id: string; 
+/**
+ * A name given for this meeting only; `None` shows the default label.
+ */
+name: string | null }
+/**
+ * Progress of the speaker model download.
+ */
+export type SpeakerModelEvent = { downloaded: number; total: number; done: boolean; error: string | null }
+export type SpeakerModelStatus = { installed: boolean; size_bytes: number }
 /**
  * Phase of the streaming overlay card, emitted to drive its UI state.
  */
@@ -1305,11 +1684,45 @@ export type StreamTextEvent = { committed: string; tentative: string }
  */
 export type StreamWorkKind = "transcribing" | "polishing"
 /**
+ * Where meeting summaries are written.
+ */
+export type SummaryEngine = 
+/**
+ * Headless Claude Code (`claude -p`) on the user's own account. Only the
+ * transcript text is sent.
+ */
+"claude_code" | 
+/**
+ * The Custom post-processing provider (Ollama on this computer by default).
+ */
+"local"
+/**
  * UI appearance mode. `System` follows the OS `prefers-color-scheme`; `Light`
  * and `Dark` force one of the two palettes Handy already ships.
  */
 export type Theme = "system" | "light" | "dark"
+/**
+ * How one recorded track lines up with the meeting's clock.
+ */
+export type TrackTiming = { 
+/**
+ * `me` or `them`.
+ */
+track: string; 
+/**
+ * When the track's first sample was captured, from the meeting start.
+ */
+start_offset_ms: number; 
+/**
+ * Meeting time per track time: the device clock's drift.
+ */
+scale: number }
 export type TranscribeAcceleratorSetting = "auto" | "cpu" | "gpu"
+export type TranscriptSegment = { 
+/**
+ * Milliseconds from the start of the meeting.
+ */
+start_ms: number; end_ms: number; speaker: string; text: string }
 /**
  * Emitted when a dictation finishes (not on cancel); onboarding uses it to measure speed.
  */

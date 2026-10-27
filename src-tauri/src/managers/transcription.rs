@@ -33,8 +33,10 @@ mod chunked;
 mod job;
 mod live;
 pub mod policy;
+mod timed;
 
 pub use job::ChunkControl;
+pub use timed::TimedText;
 
 const STREAM_PERF_LOG_INTERVAL: Duration = Duration::from_secs(5);
 

@@ -739,6 +739,11 @@ impl AudioRecordingManager {
         if !settings.mute_while_recording {
             return;
         }
+        // Muting the speakers would silence the call a meeting is recording.
+        if crate::meeting::manager(&self.app_handle).is_some_and(|m| m.is_recording()) {
+            debug!("Not muting while a meeting records");
+            return;
+        }
 
         // Lock order: is_open before mute_state (matches stop_microphone_stream).
         let is_open = self.is_open.lock().unwrap();

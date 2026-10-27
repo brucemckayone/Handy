@@ -14,6 +14,7 @@ mod helpers;
 mod input;
 mod llm_client;
 mod managers;
+pub mod meeting;
 mod memory;
 mod overlay;
 mod paste_tx;
@@ -216,6 +217,15 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(history_manager.clone());
     app_handle.manage(tray::TrayState::new());
     app_handle.manage(TranscriptionJobManager::new(app_handle));
+    match meeting::MeetingManager::new(app_handle) {
+        Ok(meetings) => {
+            app_handle.manage(Arc::new(meetings));
+            if let Some(meetings) = meeting::manager(app_handle) {
+                meetings.resume_pending();
+            }
+        }
+        Err(e) => log::error!("Failed to set up meetings: {}", e),
+    }
 
     // Note: Shortcuts are NOT initialized here.
     // The frontend is responsible for calling the `initialize_shortcuts` command
@@ -300,6 +310,16 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             "copy_last_transcript" => {
                 tray::copy_last_transcript(app);
             }
+            "meeting_toggle" => {
+                let app = app.clone();
+                std::thread::spawn(move || meeting::toggle(&app));
+            }
+            "meeting_bookmark" => {
+                meeting::bookmark(app);
+            }
+            "open_meetings" => {
+                meeting::commands::show_meetings(app);
+            }
             "unload_model" => {
                 let transcription_manager = app.state::<Arc<TranscriptionManager>>();
                 if !transcription_manager.is_model_loaded() {
@@ -368,6 +388,10 @@ fn initialize_core_logic(app_handle: &AppHandle) {
 
     // Create the recording overlay window (hidden by default)
     utils::create_recording_overlay(app_handle);
+
+    // The meeting pill and call prompt windows, and the call watcher.
+    meeting::widgets::create(app_handle);
+    meeting::detect::start(app_handle);
 }
 
 #[tauri::command]
@@ -779,6 +803,29 @@ pub fn run(cli_args: CliArgs) {
             commands::history::update_history_limit,
             commands::history::update_recording_retention_period,
             helpers::clamshell::is_laptop,
+            meeting::commands::start_meeting,
+            meeting::commands::stop_meeting,
+            meeting::commands::add_meeting_bookmark,
+            meeting::commands::get_meeting_recording,
+            meeting::commands::list_meetings,
+            meeting::commands::get_meeting,
+            meeting::commands::rename_meeting,
+            meeting::commands::rename_meeting_speaker,
+            meeting::commands::set_meeting_starred,
+            meeting::commands::set_meeting_action_done,
+            meeting::commands::delete_meeting,
+            meeting::commands::retry_meeting,
+            meeting::commands::summarise_meeting,
+            meeting::commands::change_meeting_settings,
+            meeting::commands::get_meeting_output_info,
+            meeting::commands::find_claude_code,
+            meeting::commands::get_speaker_model_status,
+            meeting::commands::download_speaker_model,
+            meeting::commands::respond_to_meeting_prompt,
+            meeting::commands::get_meeting_prompt_state,
+            meeting::commands::open_meetings,
+            meeting::commands::copy_meeting_text,
+            meeting::commands::save_meeting_markdown,
         ])
         .events(collect_events![
             managers::history::HistoryUpdatePayload,
@@ -787,6 +834,12 @@ pub fn run(cli_args: CliArgs) {
             managers::transcription::StreamPhaseEvent,
             transcription_coordinator::RecordingStateEvent,
             actions::TranscriptionCompleteEvent,
+            meeting::MeetingRecordingEvent,
+            meeting::MeetingChangedEvent,
+            meeting::MeetingLevelsEvent,
+            meeting::widgets::MeetingPromptEvent,
+            meeting::widgets::MeetingPillMessageEvent,
+            meeting::speakers::SpeakerModelEvent,
         ]);
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds

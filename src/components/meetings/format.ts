@@ -73,6 +73,32 @@ export const ownerName = (
     ? speakerName(meeting, owner, t)
     : owner;
 
+/** The summary as text to read aloud: overview, decisions, action items. */
+export const summaryToRead = (meeting: Meeting, t: TFunction): string => {
+  const summary = meeting.summary;
+  if (!summary) return "";
+  const parts = [summary.overview];
+  if (summary.decisions.length > 0) {
+    parts.push(
+      t("meetings.markdown.decisions"),
+      summary.decisions.map((d) => `- ${d.text}`).join("\n"),
+    );
+  }
+  if (summary.action_items.length > 0) {
+    parts.push(
+      t("meetings.markdown.actions"),
+      summary.action_items
+        .map((a) =>
+          a.owner
+            ? `- ${ownerName(meeting, a.owner, t)}: ${a.text}`
+            : `- ${a.text}`,
+        )
+        .join("\n"),
+    );
+  }
+  return parts.join("\n\n");
+};
+
 /** The label the summary gave a bookmark, if it gave one. */
 export const bookmarkLabel = (
   meeting: Pick<Meeting, "summary">,

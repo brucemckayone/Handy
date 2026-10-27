@@ -8,6 +8,7 @@ import {
   Sparkles,
   Cpu,
   Users,
+  Volume2,
 } from "lucide-react";
 import HandyTextLogo from "./icons/HandyTextLogo";
 import HandyHand from "./icons/HandyHand";
@@ -21,6 +22,7 @@ import {
   ModelsSettings,
 } from "./settings";
 import { MeetingsPage } from "./meetings/MeetingsPage";
+import { ReadAloudPage } from "./read-aloud/ReadAloudPage";
 
 export type SidebarSection = keyof typeof SECTIONS_CONFIG;
 
@@ -57,6 +59,12 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.meetings",
     icon: Users,
     component: MeetingsPage,
+    enabled: () => true,
+  },
+  readAloud: {
+    labelKey: "sidebar.readAloud",
+    icon: Volume2,
+    component: ReadAloudPage,
     enabled: () => true,
   },
   models: {

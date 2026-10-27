@@ -73,7 +73,8 @@ pub fn prompt_state() -> Option<PromptState> {
     PROMPT.lock().unwrap_or_else(|p| p.into_inner()).clone()
 }
 
-fn build(app: &AppHandle, label: &str, view: &str, (width, height): (f64, f64)) {
+/// A small always-on-top window showing one view of the widgets page.
+pub(crate) fn build(app: &AppHandle, label: &str, view: &str, (width, height): (f64, f64)) {
     let url = format!("src/meeting-widgets/index.html?view={view}");
     let mut builder = WebviewWindowBuilder::new(app, label, tauri::WebviewUrl::App(url.into()))
         .title("Handy")
@@ -122,29 +123,39 @@ pub fn sync_pill(app: &AppHandle, recording: Option<&RecordingInfo>) {
             let _ = window.hide();
             return;
         }
-        if let Some(monitor) = monitor(&handle) {
-            let scale = monitor.scale_factor();
-            let (w, h) = (
-                (PILL_SIZE.0 * scale).round() as u32,
-                (PILL_SIZE.1 * scale).round() as u32,
-            );
-            let position = *monitor.position();
-            let size = *monitor.size();
-            let x = position.x + (size.width as i32 - w as i32) / 2;
-            let y = match get_settings(&handle).overlay_position {
-                OverlayPosition::Top => position.y + (PILL_TOP_OFFSET * scale).round() as i32,
-                OverlayPosition::Bottom => {
-                    position.y + size.height as i32
-                        - h as i32
-                        - (PILL_BOTTOM_OFFSET * scale).round() as i32
-                }
-            };
-            let _ = window.set_size(PhysicalSize::new(w, h));
-            let _ = window.set_position(PhysicalPosition::new(x, y));
-        }
-        let _ = window.show();
-        let _ = window.set_always_on_top(true);
+        show_where_overlay_shows(&handle, &window, PILL_SIZE);
     });
+}
+
+/// Shows `window` at `size`, centred where the dictation overlay appears.
+/// Call on the main thread.
+pub(crate) fn show_where_overlay_shows(
+    app: &AppHandle,
+    window: &tauri::WebviewWindow,
+    size: (f64, f64),
+) {
+    if let Some(monitor) = monitor(app) {
+        let scale = monitor.scale_factor();
+        let (w, h) = (
+            (size.0 * scale).round() as u32,
+            (size.1 * scale).round() as u32,
+        );
+        let position = *monitor.position();
+        let screen = *monitor.size();
+        let x = position.x + (screen.width as i32 - w as i32) / 2;
+        let y = match get_settings(app).overlay_position {
+            OverlayPosition::Top => position.y + (PILL_TOP_OFFSET * scale).round() as i32,
+            OverlayPosition::Bottom => {
+                position.y + screen.height as i32
+                    - h as i32
+                    - (PILL_BOTTOM_OFFSET * scale).round() as i32
+            }
+        };
+        let _ = window.set_size(PhysicalSize::new(w, h));
+        let _ = window.set_position(PhysicalPosition::new(x, y));
+    }
+    let _ = window.show();
+    let _ = window.set_always_on_top(true);
 }
 
 pub fn pill_message(app: &AppHandle, message: &str) {

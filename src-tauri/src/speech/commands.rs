@@ -55,6 +55,15 @@ pub fn is_speaking(app: AppHandle) -> bool {
     super::manager(&app).is_some_and(|s| s.is_speaking())
 }
 
+/// Handy's own executable, for the command lines shown in settings.
+#[tauri::command]
+#[specta::specta]
+pub fn get_handy_executable() -> Option<String> {
+    std::env::current_exe()
+        .ok()
+        .map(|path| path.to_string_lossy().into_owned())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn change_speech_settings(app: AppHandle, settings: SpeechSettings) -> Result<(), String> {

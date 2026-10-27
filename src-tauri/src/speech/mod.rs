@@ -8,6 +8,7 @@
 
 pub mod commands;
 pub mod model;
+pub mod pill;
 pub mod selection;
 pub mod spool;
 pub mod text;
@@ -121,6 +122,7 @@ impl SpeechManager {
     fn set_speaking(&self, speaking: bool) {
         if self.speaking.swap(speaking, Ordering::AcqRel) != speaking {
             let _ = SpeechStateEvent { speaking }.emit(&self.app);
+            pill::sync(&self.app, speaking);
             crate::tray::update_tray_menu(&self.app);
         }
     }
@@ -257,6 +259,7 @@ pub fn speak(app: &AppHandle, text: &str) {
 fn refused(app: &AppHandle, refusal: SpeakRefusal) {
     info!("Not reading aloud: {refusal:?}");
     let _ = SpeechRefusedEvent { refusal }.emit(app);
+    pill::notice(app);
 }
 
 /// Stops speaking, if Handy is.

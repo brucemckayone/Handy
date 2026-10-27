@@ -1198,6 +1198,12 @@ async changeSpeechSettings(settings: SpeechSettings) : Promise<Result<null, stri
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Handy's own executable, for the command lines shown in settings.
+ */
+async getHandyExecutable() : Promise<string | null> {
+    return await TAURI_INVOKE("get_handy_executable");
 }
 }
 

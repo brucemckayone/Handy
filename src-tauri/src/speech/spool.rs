@@ -2,6 +2,10 @@
 //! single-instance hand-off splits arguments at `|`, which markdown tables
 //! are full of, and command lines are short; so the launched process saves
 //! the text here and the running one picks it up when the flag arrives.
+//!
+//! These flags come from scripts and agents' hooks, so on Windows they never
+//! start Handy (that process would never exit, and the caller would wait on
+//! it). Elsewhere a launched Handy reads its own text once it's up.
 
 use std::io::Read;
 use std::path::PathBuf;
@@ -11,7 +15,15 @@ use crate::cli::CliArgs;
 
 /// More than enough: reading stops at the word limit long before this.
 const MAX_BYTES: u64 = 1 << 20;
-const SPEAK_FLAGS: &[&str] = &["--speak", "--speak-file", "--speak-stdin"];
+const SPEAK_FLAGS: &[&str] = &[
+    "--speak",
+    "--speak-file",
+    "--speak-stdin",
+    "--speak-claude-hook",
+];
+/// tauri.conf.json's `identifier`, which names the single-instance window.
+#[cfg(windows)]
+const IDENTIFIER: &str = "com.pais.handy";
 
 fn dir() -> PathBuf {
     std::env::temp_dir().join("handy-speech")
@@ -19,7 +31,27 @@ fn dir() -> PathBuf {
 
 /// Whether the command line asks for something to be read.
 pub fn requested(args: &CliArgs) -> bool {
-    args.speak.is_some() || args.speak_file.is_some() || args.speak_stdin
+    args.speak.is_some() || args.speak_file.is_some() || args.speak_stdin || args.speak_claude_hook
+}
+
+/// Whether a Handy is running to hand the text to: looks for the window
+/// tauri-plugin-single-instance listens on.
+#[cfg(windows)]
+pub fn handy_running() -> bool {
+    use windows::core::PCWSTR;
+    use windows::Win32::UI::WindowsAndMessaging::FindWindowW;
+    let wide = |s: String| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+    let class = wide(format!("{IDENTIFIER}-sic"));
+    let name = wide(format!("{IDENTIFIER}-siw"));
+    // SAFETY: both strings are NUL-terminated and outlive the call.
+    unsafe { FindWindowW(PCWSTR(class.as_ptr()), PCWSTR(name.as_ptr())) }
+        .is_ok_and(|hwnd| !hwnd.is_invalid())
+}
+
+/// Elsewhere the launched Handy simply becomes the running one.
+#[cfg(not(windows))]
+pub fn handy_running() -> bool {
+    true
 }
 
 /// Whether forwarded arguments ask for something to be read.
@@ -42,9 +74,12 @@ pub fn save(args: &CliArgs) -> std::io::Result<()> {
             .read_to_string(&mut text)?;
         text
     } else if args.speak_stdin {
-        let mut text = String::new();
-        std::io::stdin().take(MAX_BYTES).read_to_string(&mut text)?;
-        text
+        read_stdin()?
+    } else if args.speak_claude_hook {
+        match claude_hook_text(&read_stdin()?) {
+            Some(text) => text,
+            None => return Ok(()),
+        }
     } else {
         return Ok(());
     };
@@ -60,6 +95,25 @@ pub fn save(args: &CliArgs) -> std::io::Result<()> {
     let partial = dir.join(format!("{name}.partial"));
     std::fs::write(&partial, text)?;
     std::fs::rename(&partial, dir.join(format!("{name}.txt")))
+}
+
+fn read_stdin() -> std::io::Result<String> {
+    let mut text = String::new();
+    std::io::stdin().take(MAX_BYTES).read_to_string(&mut text)?;
+    Ok(text)
+}
+
+/// What to read from a Claude Code hook's input: Claude's last reply when it
+/// stops, or the notice when it needs the user.
+fn claude_hook_text(json: &str) -> Option<String> {
+    let input: serde_json::Value = serde_json::from_str(json).ok()?;
+    let field = match input.get("hook_event_name")?.as_str()? {
+        "Stop" => "last_assistant_message",
+        "Notification" => "message",
+        _ => return None,
+    };
+    let text = input.get(field)?.as_str()?.trim();
+    (!text.is_empty()).then(|| text.to_string())
 }
 
 /// Takes the saved texts, oldest first.
@@ -92,7 +146,37 @@ mod tests {
         assert!(requested_in(&args(&["handy", "--speak", "hi"])));
         assert!(requested_in(&args(&["handy", "--speak-file=notes.md"])));
         assert!(requested_in(&args(&["handy", "--speak-stdin"])));
+        assert!(requested_in(&args(&["handy", "--speak-claude-hook"])));
         assert!(!requested_in(&args(&["handy", "--stop-speaking"])));
         assert!(!requested_in(&args(&["handy", "--speaker"])));
+    }
+
+    #[test]
+    fn reads_claude_replies_and_notices_only() {
+        let stop = r#"{"hook_event_name":"Stop","last_assistant_message":" Done. ","stop_hook_active":false}"#;
+        assert_eq!(claude_hook_text(stop).as_deref(), Some("Done."));
+        let notice =
+            r#"{"hook_event_name":"Notification","message":"Claude needs your permission"}"#;
+        assert_eq!(
+            claude_hook_text(notice).as_deref(),
+            Some("Claude needs your permission")
+        );
+        assert_eq!(
+            claude_hook_text(r#"{"hook_event_name":"SubagentStop","last_assistant_message":"x"}"#),
+            None
+        );
+        assert_eq!(
+            claude_hook_text(r#"{"hook_event_name":"Stop","last_assistant_message":""}"#),
+            None
+        );
+        assert_eq!(claude_hook_text("not json"), None);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn identifier_matches_the_tauri_config() {
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../../tauri.conf.json")).unwrap();
+        assert_eq!(config["identifier"], IDENTIFIER);
     }
 }

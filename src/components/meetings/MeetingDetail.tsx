@@ -18,8 +18,10 @@ import {
   Download,
   Info,
   Keyboard,
+  Play,
   RotateCcw,
   Sparkles,
+  Square,
   Star,
   Trash2,
 } from "lucide-react";
@@ -28,6 +30,7 @@ import { usePressAway } from "@/hooks/usePressAway";
 import { useSettings } from "@/hooks/useSettings";
 import { Button } from "../ui/Button";
 import { Dialog } from "../ui/Dialog";
+import { useReadAloud } from "../read-aloud/useReadAloud";
 import {
   bookmarkLabel,
   formatClock,
@@ -36,6 +39,7 @@ import {
   ownerName,
   speakerColor,
   speakerName,
+  summaryToRead,
   toTurns,
 } from "./format";
 import {
@@ -195,6 +199,7 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({ id, onBack }) => {
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [missing, setMissing] = useState(false);
   const [tab, setTab] = useState<"summary" | "transcript">("summary");
+  const { speaking, read, stop } = useReadAloud();
   const [activeMs, setActiveMs] = useState<number | null>(null);
   const [shownDictation, setShownDictation] = useState<number | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -749,9 +754,29 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({ id, onBack }) => {
                   {summaryError(meeting.summary_error)}
                 </p>
               )}
-              <p className="text-sm leading-relaxed select-text">
-                {summary.overview}
-              </p>
+              <div className="flex items-start gap-3">
+                <p className="flex-1 text-sm leading-relaxed select-text">
+                  {summary.overview}
+                </p>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() =>
+                    speaking ? stop() : read(summaryToRead(meeting, t))
+                  }
+                >
+                  <span className="inline-flex items-center gap-1">
+                    {speaking ? (
+                      <Square className="w-3 h-3 fill-current" />
+                    ) : (
+                      <Play className="w-3 h-3" />
+                    )}
+                    {speaking
+                      ? t("speech.meeting.stop")
+                      : t("speech.meeting.listen")}
+                  </span>
+                </Button>
+              </div>
               {summary.decisions.length > 0 && (
                 <section className="space-y-1.5">
                   <h3 className="text-xs font-medium text-ink-3 uppercase tracking-wide">
@@ -955,7 +980,7 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({ id, onBack }) => {
               <div
                 key={`t${i}`}
                 data-turn-active={active ? "yes" : "no"}
-                className={`grid grid-cols-[3.25rem_1fr] gap-2 px-2 py-1.5 rounded-md ${active ? "bg-logo-primary/20" : ""}`}
+                className={`group grid grid-cols-[3.25rem_1fr_auto] gap-2 px-2 py-1.5 rounded-md ${active ? "bg-logo-primary/20" : ""}`}
               >
                 <TimeButton ms={turn.startMs} onJump={jump} />
                 <div className="min-w-0">
@@ -969,6 +994,15 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({ id, onBack }) => {
                     {turn.text}
                   </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => read(turn.text)}
+                  aria-label={t("speech.meeting.listenTurn")}
+                  title={t("speech.meeting.listenTurn")}
+                  className="self-start mt-4 p-1 rounded-md text-ink-3 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-logo-primary cursor-pointer"
+                >
+                  <Play className="w-3.5 h-3.5" aria-hidden="true" />
+                </button>
               </div>
             );
           })}

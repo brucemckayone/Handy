@@ -401,6 +401,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
 
     // The meeting pill and call prompt windows, and the call watcher.
     meeting::widgets::create(app_handle);
+    speech::pill::create(app_handle);
     meeting::detect::start(app_handle);
 }
 
@@ -683,15 +684,21 @@ pub fn run(mut cli_args: CliArgs) {
     // Detect portable mode before anything else
     portable::init();
 
-    // `handy --speak ...`: save the text for whichever Handy will read it (the
-    // running one, or this one if none is), and don't open the window for it.
+    // `handy --speak ...`: save the text for the running Handy to read. With
+    // no Handy running (on Windows), exit rather than become it: scripts and
+    // hooks call these and would wait on this process forever.
     let speech_request = speech::spool::requested(&cli_args);
-    if speech_request {
-        if let Err(e) = speech::spool::save(&cli_args) {
-            eprintln!("Couldn't pass the text on to be read: {e}");
-        }
-    }
     if speech_request || cli_args.stop_speaking {
+        if !speech::spool::handy_running() {
+            eprintln!("Handy isn't running, so there's nothing to read aloud with.");
+            // A hook's failure would show up in Claude Code; this isn't one.
+            std::process::exit(if cli_args.speak_claude_hook { 0 } else { 1 });
+        }
+        if speech_request {
+            if let Err(e) = speech::spool::save(&cli_args) {
+                eprintln!("Couldn't pass the text on to be read: {e}");
+            }
+        }
         cli_args.start_hidden = true;
     }
 
@@ -854,6 +861,7 @@ pub fn run(mut cli_args: CliArgs) {
             speech::commands::stop_speaking,
             speech::commands::is_speaking,
             speech::commands::change_speech_settings,
+            speech::commands::get_handy_executable,
         ])
         .events(collect_events![
             managers::history::HistoryUpdatePayload,

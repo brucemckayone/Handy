@@ -11,9 +11,10 @@ import "@/i18n";
 import "@/App.css";
 import { MeetingPill } from "./MeetingPill";
 import { MeetingPrompt } from "./MeetingPrompt";
+import { SpeechPill } from "./SpeechPill";
 
-// The meeting pill and the call prompt: two small windows from one page,
-// told apart by `?view=`. Like the overlay, each sets its own theme.
+// The meeting pill, the call prompt and the speaking pill: small windows
+// from one page, told apart by `?view=`. Like the overlay, each sets its own theme.
 applyTheme(getStoredTheme());
 syncThemeFromSettings();
 listen<Theme>("theme-changed", (event) => applyTheme(event.payload));
@@ -22,6 +23,12 @@ const view = new URLSearchParams(window.location.search).get("view");
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    {view === "prompt" ? <MeetingPrompt /> : <MeetingPill />}
+    {view === "prompt" ? (
+      <MeetingPrompt />
+    ) : view === "speech" ? (
+      <SpeechPill />
+    ) : (
+      <MeetingPill />
+    )}
   </React.StrictMode>,
 );

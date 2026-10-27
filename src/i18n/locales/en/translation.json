@@ -22,7 +22,8 @@
     "history": "History",
     "debug": "Debug",
     "about": "About",
-    "meetings": "Meetings"
+    "meetings": "Meetings",
+    "readAloud": "Read Aloud"
   },
   "onboarding": {
     "customModelDescription": "Not officially supported",
@@ -1227,6 +1228,49 @@
       "quiet_in_meeting": "Not reading aloud while a meeting is recording.",
       "nothing_to_read": "Select some text first, then press the shortcut."
     },
-    "failed": "Reading aloud failed: {{error}}"
+    "failed": "Reading aloud failed: {{error}}",
+    "meeting": {
+      "listen": "Listen",
+      "stop": "Stop",
+      "listenTurn": "Listen to this"
+    },
+    "pill": {
+      "label": "Reading aloud",
+      "reading": "Reading aloud",
+      "stop": "Stop reading"
+    },
+    "settings": {
+      "modelGroup": "Voice model",
+      "model": "Supertonic 3",
+      "modelDescription": "A voice that runs on this computer, about {{size}} MB, downloaded once from Hugging Face. What you have read aloud never leaves this computer.",
+      "installed": "Installed",
+      "download": "Download",
+      "downloading": "{{done}} of {{total}} MB",
+      "downloadFailed": "Download failed: {{error}}",
+      "voiceGroup": "Voice",
+      "voice": "Voice",
+      "voiceDescription": "Ten stock voices: F for the higher ones, M for the lower.",
+      "tryIt": "Try it",
+      "sample": "Hello. This is how Handy reads text aloud, one sentence at a time.",
+      "speed": "Speed",
+      "speedDescription": "How fast the voice reads.",
+      "speedValue": "{{value}}×",
+      "limit": "Read up to",
+      "limitDescription": "Longer text stops here, so a long reply doesn't read for minutes.",
+      "words": "{{count}} words",
+      "quiet": "Quiet while a meeting records",
+      "quietDescription": "Anything read aloud during a meeting would be recorded with the call audio.",
+      "appsGroup": "From other apps and agents",
+      "commands": "Command line",
+      "commandsDescription": "Scripts and agents can have Handy read text aloud while it's running. Code, tables and links are left out. These are for PowerShell.",
+      "copy": "Copy",
+      "copied": "Copied",
+      "copySpeak": "Copy the command that reads text aloud",
+      "copyStdin": "Copy the command that reads piped text aloud",
+      "copyStop": "Copy the command that stops reading",
+      "claude": "Claude Code",
+      "claudeDescription": "Reads Claude's replies aloud, and tells you when it needs you. Add these hooks to ~/.claude/settings.json.",
+      "copyHooks": "Copy hooks"
+    }
   }
 }

@@ -37,6 +37,12 @@ pub struct CliArgs {
     #[arg(long)]
     pub speak_stdin: bool,
 
+    /// For Claude Code's Stop and Notification hooks: reads the hook input on
+    /// stdin and reads Claude's last reply, or the notice, aloud (sent to
+    /// running instance)
+    #[arg(long)]
+    pub speak_claude_hook: bool,
+
     /// Stop reading aloud and clear what is queued (sent to running instance)
     #[arg(long)]
     pub stop_speaking: bool,

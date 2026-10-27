@@ -56,12 +56,16 @@ impl TranscriptionManager {
 
         self.touch_activity();
         self.initiate_model_load();
+        // Language detection hears the first feed, which then goes back in
+        // front of the rest: the track streams, so there's no whole clip.
+        let first = feeds.next().transpose()?;
         let BatchContext {
             settings,
             active_model,
             setup,
             ..
-        } = self.batch_context()?;
+        } = self.batch_context(first.as_deref().unwrap_or_default())?;
+        let mut feeds = first.map(Ok).into_iter().chain(feeds);
 
         let backend = settings.vad_backend;
         let app_handle = self.app_handle.clone();

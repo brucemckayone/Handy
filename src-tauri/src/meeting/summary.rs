@@ -319,12 +319,29 @@ pub fn find_claude() -> Option<PathBuf> {
         .find(|path| path.is_file())
 }
 
+/// The transcript is private, so nothing of the user's own setup runs with it: no hooks (which would
+/// see the prompt and the answer), plugins, MCP servers or tools, and the session isn't saved.
+const CLAUDE_ARGS: [&str; 12] = [
+    "-p",
+    "--output-format",
+    "json",
+    "--max-turns",
+    "1",
+    "--setting-sources",
+    "",
+    "--strict-mcp-config",
+    "--tools",
+    "",
+    "--no-session-persistence",
+    "--disable-slash-commands",
+];
+
 fn run_claude_code(prompt: &str) -> Result<String> {
     let claude = find_claude().ok_or_else(|| anyhow!("claude_not_found"))?;
-    // An empty folder, so Claude Code reads no project files or settings.
+    // An empty folder, so Claude Code reads no project files.
     let workdir = std::env::temp_dir().join("handy-meeting-summary");
     std::fs::create_dir_all(&workdir)?;
-    let args = ["-p", "--output-format", "json", "--max-turns", "1"];
+    let args = CLAUDE_ARGS;
     let is_script = claude
         .extension()
         .is_some_and(|e| e.eq_ignore_ascii_case("cmd"));
@@ -577,6 +594,21 @@ mod tests {
             },
         ];
         m
+    }
+
+    #[test]
+    fn claude_runs_with_none_of_the_users_setup() {
+        for flag in [
+            "--setting-sources",
+            "--strict-mcp-config",
+            "--tools",
+            "--no-session-persistence",
+        ] {
+            assert!(CLAUDE_ARGS.contains(&flag), "missing {flag}");
+        }
+        let after = |flag| CLAUDE_ARGS[CLAUDE_ARGS.iter().position(|a| *a == flag).unwrap() + 1];
+        assert_eq!(after("--setting-sources"), "");
+        assert_eq!(after("--tools"), "");
     }
 
     #[test]

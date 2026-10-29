@@ -10,8 +10,6 @@ use log::{info, warn};
 use once_cell::sync::Lazy;
 use serde::Deserialize;
 use std::collections::HashSet;
-use std::io::Write;
-use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::AppHandle;
@@ -297,66 +295,15 @@ async fn summarise_locally(
 }
 
 fn run_claude_code(prompt: &str) -> Result<String> {
-    let claude = claude_cli::find_claude().ok_or_else(|| anyhow!("claude_not_found"))?;
     // An empty folder, so Claude Code reads no project files or settings.
     let workdir = std::env::temp_dir().join("handy-meeting-summary");
     std::fs::create_dir_all(&workdir)?;
-    let mut child = claude_cli::command(&claude)
-        .args(["-p", "--output-format", "json", "--max-turns", "1"])
-        .current_dir(&workdir)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-    let mut stdin = child.stdin.take().ok_or_else(|| anyhow!("No stdin"))?;
-    let input = prompt.to_string();
-    let writer = std::thread::spawn(move || stdin.write_all(input.as_bytes()));
-    let mut stdout = child.stdout.take().ok_or_else(|| anyhow!("No stdout"))?;
-    let mut stderr = child.stderr.take().ok_or_else(|| anyhow!("No stderr"))?;
-    let reader = std::thread::spawn(move || {
-        let mut out = String::new();
-        std::io::Read::read_to_string(&mut stdout, &mut out).map(|_| out)
-    });
-    let err_reader = std::thread::spawn(move || {
-        let mut out = String::new();
-        let _ = std::io::Read::read_to_string(&mut stderr, &mut out);
-        out
-    });
-    let started = Instant::now();
-    let status = loop {
-        if let Some(status) = child.try_wait()? {
-            break status;
-        }
-        if started.elapsed() > TIMEOUT {
-            claude_cli::kill_tree(&mut child);
-            return Err(anyhow!("Claude Code took too long"));
-        }
-        std::thread::sleep(Duration::from_millis(250));
-    };
-    let _ = writer.join();
-    let out = reader
-        .join()
-        .map_err(|_| anyhow!("Claude Code's output was lost"))??;
-    let err = err_reader.join().unwrap_or_default();
-    if !status.success() && out.trim().is_empty() {
-        return Err(anyhow!(
-            "Claude Code failed: {}",
-            err.lines().last().unwrap_or("no output")
-        ));
-    }
-    #[derive(Deserialize)]
-    struct ClaudeResult {
-        result: Option<String>,
-        #[serde(default)]
-        is_error: bool,
-    }
-    let parsed: ClaudeResult = serde_json::from_str(out.trim())
-        .map_err(|e| anyhow!("Unexpected output from Claude Code: {}", e))?;
-    match parsed.result {
-        Some(result) if !parsed.is_error => Ok(result),
-        Some(result) => Err(anyhow!("Claude Code failed: {}", result)),
-        None => Err(anyhow!("Claude Code gave no answer")),
-    }
+    claude_cli::run_json(
+        &["-p", "--output-format", "json", "--max-turns", "1"],
+        &workdir,
+        prompt,
+        TIMEOUT,
+    )
 }
 
 /// Whether `base_url` points at this computer.

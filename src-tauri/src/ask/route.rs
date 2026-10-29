@@ -73,20 +73,8 @@ mod tests {
 
     fn thread(id: &str, window: Option<WindowKey>, last_used: i64) -> Thread {
         Thread {
-            id: id.into(),
-            title: id.into(),
-            title_is_suggested: true,
-            created_at: last_used,
-            last_used,
             window,
-            app_label: None,
-            project_dir: None,
-            agent: None,
-            claude_session: None,
-            sessions: Vec::new(),
-            merge: None,
-            kept_apart: Vec::new(),
-            exchanges: Vec::new(),
+            ..Thread::blank(id, last_used)
         }
     }
 

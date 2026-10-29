@@ -253,6 +253,8 @@ fn run_with(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
+    use crate::claude_cli::fake_claude;
 
     fn fixture(name: &str) -> Vec<Line> {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -327,15 +329,6 @@ mod tests {
             cwd,
             add_dirs: Vec::new(),
         }
-    }
-
-    /// A stand-in `claude` that runs `body` as a batch file.
-    fn fake_claude(name: &str, body: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join("handy-ask-fake-claude");
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join(format!("{name}.cmd"));
-        std::fs::write(&path, format!("@echo off\r\n{body}\r\n")).unwrap();
-        path
     }
 
     #[cfg(windows)]

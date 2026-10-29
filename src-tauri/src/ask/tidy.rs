@@ -2,11 +2,10 @@
 //! Claude Code call names new threads properly and spots threads about the
 //! same thing, which the panel then offers to merge.
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use serde::Deserialize;
 use std::path::Path;
-use std::process::Stdio;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use super::answer;
 use super::store::Thread;
@@ -92,9 +91,8 @@ pub fn parse(reply: &str) -> Option<Reply> {
 
 /// Asks Haiku, with no tools and nothing saved.
 pub fn run(prompt: &str, cwd: &Path) -> Result<String> {
-    let claude = claude_cli::find_claude().ok_or_else(|| anyhow!("claude_not_found"))?;
-    let mut child = claude_cli::command(&claude)
-        .args([
+    claude_cli::run_json(
+        &[
             "-p",
             "--output-format",
             "json",
@@ -106,40 +104,17 @@ pub fn run(prompt: &str, cwd: &Path) -> Result<String> {
             "project,local",
             "--tools",
             "",
-        ])
-        .current_dir(cwd)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()?;
-    let mut stdin = child.stdin.take().ok_or_else(|| anyhow!("No stdin"))?;
-    let input = prompt.to_string();
-    std::thread::spawn(move || std::io::Write::write_all(&mut stdin, input.as_bytes()));
-    let mut stdout = child.stdout.take().ok_or_else(|| anyhow!("No stdout"))?;
-    let reader = std::thread::spawn(move || {
-        let mut out = String::new();
-        let _ = std::io::Read::read_to_string(&mut stdout, &mut out);
-        out
-    });
-    let started = Instant::now();
-    while child.try_wait()?.is_none() {
-        if started.elapsed() > TIMEOUT {
-            claude_cli::kill_tree(&mut child);
-            return Err(anyhow!("The tidy-up took too long"));
-        }
-        std::thread::sleep(Duration::from_millis(200));
-    }
-    let out = reader.join().unwrap_or_default();
-    let value: serde_json::Value = serde_json::from_str(out.trim())?;
-    if value["is_error"].as_bool().unwrap_or(false) {
-        return Err(anyhow!("Claude Code failed the tidy-up"));
-    }
-    Ok(value["result"].as_str().unwrap_or_default().to_string())
+        ],
+        cwd,
+        prompt,
+        TIMEOUT,
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Instant;
 
     #[test]
     fn reads_the_reply_inside_any_wrapping() {
@@ -161,20 +136,8 @@ mod tests {
 
     fn thread(id: &str, suggested: bool) -> Thread {
         Thread {
-            id: id.into(),
-            title: id.into(),
             title_is_suggested: suggested,
-            created_at: 0,
-            last_used: 0,
-            window: None,
-            app_label: None,
-            project_dir: None,
-            agent: None,
-            claude_session: None,
-            sessions: Vec::new(),
-            exchanges: Vec::new(),
-            merge: None,
-            kept_apart: Vec::new(),
+            ..Thread::blank(id, 0)
         }
     }
 

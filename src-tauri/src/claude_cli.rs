@@ -1,8 +1,12 @@
 //! Finding and running the `claude` command (Claude Code) without a window.
 //! Shared by meeting summaries and Ask.
 
+use anyhow::{anyhow, Result};
+use serde::Deserialize;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command};
+use std::process::{Child, Command, Stdio};
+use std::time::{Duration, Instant};
 
 /// Points Handy at another `claude`, such as a fake one in tests.
 const OVERRIDE_VAR: &str = "HANDY_CLAUDE_PATH";
@@ -69,10 +73,124 @@ pub fn kill_tree(child: &mut Child) {
     let _ = child.wait();
 }
 
+/// Asks `claude` once and returns its reply's text: `args` must include
+/// `-p --output-format json`; `prompt` goes on stdin; `cwd` is where it
+/// runs. Past `timeout` it is stopped. A missing `claude` is the error
+/// `claude_not_found`, which settings pages look for.
+pub fn run_json(args: &[&str], cwd: &Path, prompt: &str, timeout: Duration) -> Result<String> {
+    let claude = find_claude().ok_or_else(|| anyhow!("claude_not_found"))?;
+    run_json_with(&claude, args, cwd, prompt, timeout)
+}
+
+fn run_json_with(
+    claude: &Path,
+    args: &[&str],
+    cwd: &Path,
+    prompt: &str,
+    timeout: Duration,
+) -> Result<String> {
+    let mut child = command(claude)
+        .args(args)
+        .current_dir(cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let mut stdin = child.stdin.take().ok_or_else(|| anyhow!("No stdin"))?;
+    let input = prompt.to_string();
+    // Written on its own thread: a full pipe must not hold up the readers.
+    let writer = std::thread::spawn(move || stdin.write_all(input.as_bytes()));
+    let mut stdout = child.stdout.take().ok_or_else(|| anyhow!("No stdout"))?;
+    let mut stderr = child.stderr.take().ok_or_else(|| anyhow!("No stderr"))?;
+    let reader = std::thread::spawn(move || {
+        let mut out = String::new();
+        std::io::Read::read_to_string(&mut stdout, &mut out).map(|_| out)
+    });
+    let err_reader = std::thread::spawn(move || {
+        let mut out = String::new();
+        let _ = std::io::Read::read_to_string(&mut stderr, &mut out);
+        out
+    });
+    let started = Instant::now();
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if started.elapsed() > timeout {
+            kill_tree(&mut child);
+            return Err(anyhow!("Claude Code took too long"));
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    };
+    let _ = writer.join();
+    let out = reader
+        .join()
+        .map_err(|_| anyhow!("Claude Code's output was lost"))??;
+    let err = err_reader.join().unwrap_or_default();
+    if !status.success() && out.trim().is_empty() {
+        return Err(anyhow!(
+            "Claude Code failed: {}",
+            err.lines().last().unwrap_or("no output")
+        ));
+    }
+    #[derive(Deserialize)]
+    struct ClaudeResult {
+        result: Option<String>,
+        #[serde(default)]
+        is_error: bool,
+    }
+    let parsed: ClaudeResult = serde_json::from_str(out.trim())
+        .map_err(|e| anyhow!("Unexpected output from Claude Code: {}", e))?;
+    match parsed.result {
+        Some(result) if !parsed.is_error => Ok(result),
+        Some(result) => Err(anyhow!("Claude Code failed: {}", result)),
+        None => Err(anyhow!("Claude Code gave no answer")),
+    }
+}
+
+/// A stand-in `claude` for tests that runs `body` as a batch file. Each
+/// test names its own, so tests running at once don't share one.
+#[cfg(all(test, windows))]
+pub(crate) fn fake_claude(name: &str, body: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join("handy-fake-claude");
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join(format!("{name}.cmd"));
+    std::fs::write(&path, format!("@echo off\r\n{body}\r\n")).unwrap();
+    path
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{Duration, Instant};
+
+    #[cfg(windows)]
+    #[test]
+    fn run_json_reads_the_reply_and_its_errors() {
+        let run = |claude: &Path| {
+            run_json_with(
+                claude,
+                &["-p"],
+                &std::env::temp_dir(),
+                "hi",
+                Duration::from_secs(30),
+            )
+        };
+        let ok = fake_claude("ok", r#"echo {"result":"Hello","is_error":false}"#);
+        assert_eq!(run(&ok).unwrap(), "Hello");
+        let refused = fake_claude(
+            "refused",
+            r#"echo {"result":"Not logged in","is_error":true}"#,
+        );
+        assert_eq!(
+            run(&refused).unwrap_err().to_string(),
+            "Claude Code failed: Not logged in"
+        );
+        let crashed = fake_claude("crashed", ">&2 echo boom\r\nexit /b 3");
+        assert_eq!(
+            run(&crashed).unwrap_err().to_string(),
+            "Claude Code failed: boom"
+        );
+    }
 
     #[cfg(windows)]
     fn running(pid: u32) -> bool {

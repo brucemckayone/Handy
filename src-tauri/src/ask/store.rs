@@ -144,6 +144,29 @@ pub struct Thread {
     pub exchanges: Vec<Exchange>,
 }
 
+#[cfg(test)]
+impl Thread {
+    /// An empty thread with nothing set, for tests to fill in.
+    pub fn blank(id: &str, last_used: i64) -> Self {
+        Self {
+            id: id.into(),
+            title: id.into(),
+            title_is_suggested: true,
+            created_at: last_used,
+            last_used,
+            window: None,
+            app_label: None,
+            project_dir: None,
+            agent: None,
+            claude_session: None,
+            sessions: Vec::new(),
+            merge: None,
+            kept_apart: Vec::new(),
+            exchanges: Vec::new(),
+        }
+    }
+}
+
 /// A suggestion to merge another thread into this one.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Type)]
 pub struct MergeSuggestion {
@@ -286,21 +309,10 @@ impl AskStore {
 mod tests {
     use super::*;
 
-    pub fn thread(id: &str, last_used: i64) -> Thread {
+    fn thread(id: &str, last_used: i64) -> Thread {
         Thread {
-            id: id.into(),
             title: format!("Thread {id}"),
-            title_is_suggested: true,
-            created_at: last_used,
-            last_used,
-            window: None,
             app_label: Some("Code · Handy".into()),
-            project_dir: None,
-            agent: None,
-            claude_session: None,
-            sessions: Vec::new(),
-            merge: None,
-            kept_apart: Vec::new(),
             exchanges: vec![Exchange {
                 question: Question {
                     id: "q1".into(),
@@ -325,6 +337,7 @@ mod tests {
                     spoken: true,
                 },
             }],
+            ..Thread::blank(id, last_used)
         }
     }
 

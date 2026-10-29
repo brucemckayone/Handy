@@ -5,6 +5,7 @@ import {
   FlaskConical,
   History,
   Info,
+  MessageCircleQuestion,
   Sparkles,
   Cpu,
   Users,
@@ -23,6 +24,7 @@ import {
 } from "./settings";
 import { MeetingsPage } from "./meetings/MeetingsPage";
 import { ReadAloudPage } from "./read-aloud/ReadAloudPage";
+import { AskPage } from "./ask/AskPage";
 
 export type SidebarSection = keyof typeof SECTIONS_CONFIG;
 
@@ -65,6 +67,12 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.readAloud",
     icon: Volume2,
     component: ReadAloudPage,
+    enabled: () => true,
+  },
+  ask: {
+    labelKey: "sidebar.ask",
+    icon: MessageCircleQuestion,
+    component: AskPage,
     enabled: () => true,
   },
   models: {

@@ -707,15 +707,31 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
         menu.remove(&check_updates_i)?;
     }
 
-    // Meetings go first, below the version line.
+    // Meetings go first, below the version line, then Ask.
+    let mut next = 2;
     if inputs.meetings {
         let items = meeting_items(app, inputs, &strings)?;
-        let count = items.len();
-        for (i, item) in items.iter().enumerate() {
-            menu.insert(item, 2 + i)?;
+        for item in &items {
+            menu.insert(item, next)?;
+            next += 1;
         }
-        menu.insert(&separator()?, 2 + count)?;
+        menu.insert(&separator()?, next)?;
+        next += 1;
     }
+    let english = get_tray_translations(Some("en".to_string()));
+    let open_ask = MenuItem::with_id(
+        app,
+        "open_ask",
+        if strings.open_ask.is_empty() {
+            &english.open_ask
+        } else {
+            &strings.open_ask
+        },
+        true,
+        None::<&str>,
+    )?;
+    menu.insert(&open_ask, next)?;
+    menu.insert(&separator()?, next + 1)?;
 
     // Both layouts start with [version, separator, ...]; slot the warning in
     // right below the version line so it's the first actionable thing seen.

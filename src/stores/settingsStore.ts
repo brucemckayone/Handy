@@ -6,6 +6,7 @@ import type {
   AudioDevice,
   MeetingSettings,
   SpeechSettings,
+  AskSettings,
   PostProcessApiFormat,
   ChineseScript,
   TranscribeAcceleratorSetting,
@@ -98,6 +99,7 @@ const settingUpdaters: {
   sound_theme: (value) => commands.changeSoundThemeSetting(value as string),
   meeting: (value) => commands.changeMeetingSettings(value as MeetingSettings),
   speech: (value) => commands.changeSpeechSettings(value as SpeechSettings),
+  ask: (value) => commands.changeAskSettings(value as AskSettings),
   start_hidden: (value) => commands.changeStartHiddenSetting(value as boolean),
   autostart_enabled: (value) =>
     commands.changeAutostartSetting(value as boolean),

@@ -198,7 +198,7 @@ pub fn get_meeting_output_info(app: AppHandle) -> MeetingOutputInfo {
 #[tauri::command]
 #[specta::specta]
 pub fn find_claude_code() -> Option<String> {
-    summary::find_claude().map(|p| p.display().to_string())
+    crate::claude_cli::find_claude().map(|p| p.display().to_string())
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]

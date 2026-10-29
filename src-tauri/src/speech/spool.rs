@@ -1,4 +1,5 @@
-//! Hands `handy --speak` text to the running Handy through files. The
+//! Hands `handy --speak` text (and `handy --ask` questions, in their own
+//! queue) to the running Handy through files. The
 //! single-instance hand-off splits arguments at `|`, which markdown tables
 //! are full of, and command lines are short; so the launched process saves
 //! the text here and the running one picks it up when the flag arrives.
@@ -25,8 +26,22 @@ const SPEAK_FLAGS: &[&str] = &[
 #[cfg(windows)]
 const IDENTIFIER: &str = "com.pais.handy";
 
-fn dir() -> PathBuf {
-    std::env::temp_dir().join("handy-speech")
+/// Which queue a saved text waits in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Queue {
+    /// Text to read aloud.
+    Speech,
+    /// Questions for Ask (`handy --ask`).
+    Ask,
+}
+
+impl Queue {
+    fn dir(self) -> PathBuf {
+        std::env::temp_dir().join(match self {
+            Queue::Speech => "handy-speech",
+            Queue::Ask => "handy-ask-queue",
+        })
+    }
 }
 
 /// Whether the command line asks for something to be read.
@@ -83,7 +98,12 @@ pub fn save(args: &CliArgs) -> std::io::Result<()> {
     } else {
         return Ok(());
     };
-    let dir = dir();
+    save_text(Queue::Speech, &text)
+}
+
+/// Saves `text` in `queue` for the running Handy to pick up.
+pub fn save_text(queue: Queue, text: &str) -> std::io::Result<()> {
+    let dir = queue.dir();
     std::fs::create_dir_all(&dir)?;
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -97,7 +117,7 @@ pub fn save(args: &CliArgs) -> std::io::Result<()> {
     std::fs::rename(&partial, dir.join(format!("{name}.txt")))
 }
 
-fn read_stdin() -> std::io::Result<String> {
+pub(crate) fn read_stdin() -> std::io::Result<String> {
     let mut text = String::new();
     std::io::stdin().take(MAX_BYTES).read_to_string(&mut text)?;
     Ok(text)
@@ -116,9 +136,14 @@ fn claude_hook_text(json: &str) -> Option<String> {
     (!text.is_empty()).then(|| text.to_string())
 }
 
-/// Takes the saved texts, oldest first.
+/// Takes the saved texts to read, oldest first.
 pub fn take() -> Vec<String> {
-    let Ok(entries) = std::fs::read_dir(dir()) else {
+    take_from(Queue::Speech)
+}
+
+/// Takes the texts saved in `queue`, oldest first.
+pub fn take_from(queue: Queue) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(queue.dir()) else {
         return Vec::new();
     };
     let mut paths: Vec<PathBuf> = entries

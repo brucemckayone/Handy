@@ -1,5 +1,5 @@
 //! Copies the text selected in whatever app has focus, for the read-aloud
-//! shortcut, then puts the clipboard back as it was.
+//! and Ask shortcuts, then puts the clipboard back as it was.
 
 use log::warn;
 use std::time::{Duration, Instant};
@@ -10,8 +10,23 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 const COPY_WAIT: Duration = Duration::from_millis(600);
 const POLL: Duration = Duration::from_millis(20);
 
+/// How the focused app is asked to copy.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CopyKeys {
+    /// Ctrl+C (Cmd+C on macOS).
+    Standard,
+    /// Ctrl+Insert: for Ask, which is often used from terminals, where Ctrl+C
+    /// with nothing selected would stop the program running there.
+    Insert,
+}
+
 /// The selected text, or `None` if nothing is selected.
 pub fn copy_selection(app: &AppHandle) -> Option<String> {
+    copy_selection_with(app, CopyKeys::Standard)
+}
+
+/// [`copy_selection`], copying with `keys`.
+pub fn copy_selection_with(app: &AppHandle, keys: CopyKeys) -> Option<String> {
     // Ctrl+C sent while the shortcut's Alt is still held would be Ctrl+Alt+C.
     wait_for_modifiers_up();
     let clipboard = app.clipboard();
@@ -23,7 +38,11 @@ pub fn copy_selection(app: &AppHandle) -> Option<String> {
     };
     let before = clipboard_version();
 
-    if let Err(e) = crate::clipboard::with_enigo(app, |enigo| crate::input::send_copy(enigo, 50)) {
+    let sent = crate::clipboard::with_enigo(app, move |enigo| match keys {
+        CopyKeys::Standard => crate::input::send_copy(enigo, 50),
+        CopyKeys::Insert => crate::input::send_copy_insert(enigo, 50),
+    });
+    if let Err(e) = sent {
         warn!("Couldn't copy the selection: {e}");
         return None;
     }

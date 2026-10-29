@@ -1,11 +1,13 @@
 mod actions;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 mod apple_intelligence;
+pub mod ask;
 mod audio_feedback;
 pub mod audio_toolkit;
 mod autostart;
 mod catalog;
 mod chinese_script;
+mod claude_cli;
 pub mod cli;
 mod clipboard;
 mod commands;
@@ -236,6 +238,21 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             speech::speak(app_handle, &text);
         }
     }
+    match ask::AskManager::new(app_handle) {
+        Ok(asks) => {
+            let asks = Arc::new(asks);
+            asks.start();
+            app_handle.manage(asks);
+        }
+        Err(e) => log::error!("Failed to set up Ask: {}", e),
+    }
+    // Questions saved by `handy --ask` when Handy wasn't running, as above.
+    let questions = ask::cli::take();
+    if ask::cli::requested(&app_handle.state::<CliArgs>()) {
+        for saved in questions {
+            ask::ask(app_handle, saved.into_question());
+        }
+    }
 
     // Note: Shortcuts are NOT initialized here.
     // The frontend is responsible for calling the `initialize_shortcuts` command
@@ -330,6 +347,10 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             "open_meetings" => {
                 meeting::commands::show_meetings(app);
             }
+            "open_ask" => {
+                speech::pill::ask_dismissed(app);
+                ask::panel::open(app, None, true);
+            }
             "unload_model" => {
                 let transcription_manager = app.state::<Arc<TranscriptionManager>>();
                 if !transcription_manager.is_model_loaded() {
@@ -398,6 +419,9 @@ fn initialize_core_logic(app_handle: &AppHandle) {
 
     // Create the recording overlay window (hidden by default)
     utils::create_recording_overlay(app_handle);
+
+    // The Ask panel, hidden until opened.
+    ask::panel::create(app_handle);
 
     // The meeting pill and call prompt windows, and the call watcher.
     meeting::widgets::create(app_handle);
@@ -701,6 +725,17 @@ pub fn run(mut cli_args: CliArgs) {
         }
         cli_args.start_hidden = true;
     }
+    // `handy --ask ...`: the same hand-off, for a question.
+    if ask::cli::requested(&cli_args) {
+        if !speech::spool::handy_running() {
+            eprintln!("Handy isn't running, so there's no one to ask.");
+            std::process::exit(1);
+        }
+        if let Err(e) = ask::cli::save(&cli_args) {
+            eprintln!("Couldn't pass the question on: {e}");
+        }
+        cli_args.start_hidden = true;
+    }
 
     // Parse console logging directives from RUST_LOG, falling back to info-level logging
     // when the variable is unset
@@ -862,6 +897,23 @@ pub fn run(mut cli_args: CliArgs) {
             speech::commands::is_speaking,
             speech::commands::change_speech_settings,
             speech::commands::get_handy_executable,
+            ask::commands::open_ask_panel,
+            ask::commands::close_ask_panel,
+            ask::commands::get_ask_panel_thread,
+            ask::commands::set_ask_panel_thread,
+            ask::commands::get_ask_pill_state,
+            ask::commands::list_ask_threads,
+            ask::commands::get_ask_thread,
+            ask::commands::ask_typed,
+            ask::commands::cancel_ask,
+            ask::commands::replay_ask_answer,
+            ask::commands::move_ask_question,
+            ask::commands::unlink_ask_agent,
+            ask::commands::delete_ask_thread,
+            ask::commands::delete_all_ask_threads,
+            ask::commands::merge_ask_threads,
+            ask::commands::keep_ask_threads_apart,
+            ask::commands::change_ask_settings,
         ])
         .events(collect_events![
             managers::history::HistoryUpdatePayload,
@@ -879,6 +931,11 @@ pub fn run(mut cli_args: CliArgs) {
             speech::model::SpeechModelEvent,
             speech::SpeechStateEvent,
             speech::SpeechRefusedEvent,
+            ask::AskThreadEvent,
+            ask::AskDeltaEvent,
+            ask::AskDeletedEvent,
+            ask::AskBusyEvent,
+            ask::panel::AskOpenEvent,
         ]);
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds
@@ -972,6 +1029,10 @@ pub fn run(mut cli_args: CliArgs) {
             } else if speech::spool::requested_in(&args) {
                 for text in speech::spool::take() {
                     speech::speak(app, &text);
+                }
+            } else if ask::cli::requested_in(&args) {
+                for saved in ask::cli::take() {
+                    ask::ask(app, saved.into_question());
                 }
             } else {
                 // A second process was launched without remote-control flags

@@ -47,6 +47,16 @@ pub struct CliArgs {
     #[arg(long)]
     pub stop_speaking: bool,
 
+    /// Ask Claude Code this question; the answer is spoken and shown in the
+    /// Ask panel (sent to running instance)
+    #[arg(long, value_name = "QUESTION")]
+    pub ask: Option<String>,
+
+    /// Ask what is piped in, e.g. a diff with a question (sent to running
+    /// instance)
+    #[arg(long)]
+    pub ask_stdin: bool,
+
     /// Enable debug mode with verbose logging
     #[arg(long)]
     pub debug: bool,

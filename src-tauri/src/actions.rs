@@ -113,6 +113,9 @@ pub trait ShortcutAction: Send + Sync {
 // Transcribe Action
 struct TranscribeAction {
     post_process: bool,
+    /// The Ask shortcut: the transcript is a question for Claude Code, not
+    /// text to paste, and the recording isn't kept.
+    ask: bool,
 }
 
 /// Field name for structured output JSON schema
@@ -445,6 +448,10 @@ impl ShortcutAction for TranscribeAction {
     fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
         let start_time = Instant::now();
         debug!("TranscribeAction::start called for binding: {}", binding_id);
+        if self.ask {
+            // The window being asked about, before anything else can move focus.
+            crate::ask::voice::pressed(app);
+        }
 
         // Load model in the background
         let tm = app.state::<Arc<TranscriptionManager>>();
@@ -669,6 +676,7 @@ impl ShortcutAction for TranscribeAction {
 
         let binding_id = binding_id.to_string(); // Clone binding_id for the async task
         let post_process = self.post_process;
+        let ask = self.ask;
         let cancel_generation = rm.cancel_generation();
 
         tauri::async_runtime::spawn(async move {
@@ -711,10 +719,16 @@ impl ShortcutAction for TranscribeAction {
                     let file_name = format!("handy-{}.wav", chrono::Utc::now().timestamp());
                     let wav_path = hm.recordings_dir().join(&file_name);
                     let wav_path_for_verify = wav_path.clone();
-                    let samples_for_wav = samples.clone();
-                    let wav_handle = tauri::async_runtime::spawn_blocking(move || {
-                        crate::audio_toolkit::save_wav_file(&wav_path, &samples_for_wav)
-                    });
+                    // A spoken question isn't kept as a recording.
+                    let samples_for_wav = (!ask).then(|| samples.clone());
+                    let wav_handle =
+                        tauri::async_runtime::spawn_blocking(move || match samples_for_wav {
+                            Some(samples) => {
+                                crate::audio_toolkit::save_wav_file(&wav_path, &samples)
+                                    .map(|()| true)
+                            }
+                            None => Ok(false),
+                        });
 
                     // Transcribe concurrently with WAV save: the live decode's
                     // result when it has one (all audio was already fed to it),
@@ -725,7 +739,8 @@ impl ShortcutAction for TranscribeAction {
 
                     // Await WAV save and verify
                     let wav_saved = match wav_handle.await {
-                        Ok(Ok(())) => {
+                        Ok(Ok(false)) => false,
+                        Ok(Ok(true)) => {
                             match crate::audio_toolkit::verify_wav_file(
                                 &wav_path_for_verify,
                                 sample_count,
@@ -785,6 +800,19 @@ impl ShortcutAction for TranscribeAction {
                                 debug!("Transcription operation cancelled before paste");
                                 utils::hide_recording_overlay(&ah);
                                 set_tray_state(&ah, TrayIconState::Idle);
+                                return;
+                            }
+
+                            if ask {
+                                utils::hide_recording_overlay(&ah);
+                                set_tray_state(&ah, TrayIconState::Idle);
+                                let outcome = if processed.final_text.trim().is_empty() {
+                                    empty_outcome(input_silent)
+                                } else {
+                                    crate::ask::voice::released(&ah, processed.final_text);
+                                    TranscriptionOutcome::Typed
+                                };
+                                emit_transcription_complete(&ah, outcome, sample_count, stop_time);
                                 return;
                             }
 
@@ -977,11 +1005,22 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
         "transcribe".to_string(),
         Arc::new(TranscribeAction {
             post_process: false,
+            ask: false,
         }) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "transcribe_with_post_process".to_string(),
-        Arc::new(TranscribeAction { post_process: true }) as Arc<dyn ShortcutAction>,
+        Arc::new(TranscribeAction {
+            post_process: true,
+            ask: false,
+        }) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "ask".to_string(),
+        Arc::new(TranscribeAction {
+            post_process: false,
+            ask: true,
+        }) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "cancel".to_string(),

@@ -61,6 +61,8 @@ rodio = { version = "0.23.0", default-features = false, features = ["playback", 
 symphonia = { version = "0.5.5", features = ["aac", "alac", "isomp4", "mp3", "aiff"] }
 # Resamples a decoded file to 16 kHz; the version handy-recorder already uses.
 rubato = "5"
+# Ask's screenshot of the active window; the version Tauri already uses.
+png = "0.17"
 handy-recorder = "0.1"
 reqwest = { version = "0.12", features = ["json", "stream", "gzip", "brotli", "deflate"] }
 futures-util = "0.3"
@@ -115,6 +117,7 @@ windows = { version = "0.61.3", features = [
   "Win32_Media_Audio_Endpoints",
   "Win32_System_Com_StructuredStorage",
   "Win32_System_DataExchange",
+  "Win32_System_Diagnostics_ToolHelp",
   "Win32_System_LibraryLoader",
   "Win32_System_Ole",
   "Win32_System_Memory",

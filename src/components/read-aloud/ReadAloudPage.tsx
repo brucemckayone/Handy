@@ -61,7 +61,7 @@ const CopyButton: React.FC<{
 };
 
 /** A command line to copy. */
-const CopyRow: React.FC<{ text: string; label: string }> = ({
+export const CopyRow: React.FC<{ text: string; label: string }> = ({
   text,
   label,
 }) => {

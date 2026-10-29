@@ -1204,6 +1204,156 @@ async changeSpeechSettings(settings: SpeechSettings) : Promise<Result<null, stri
  */
 async getHandyExecutable() : Promise<string | null> {
     return await TAURI_INVOKE("get_handy_executable");
+},
+/**
+ * Opens the panel on a thread (`None`: the latest), ready for typing.
+ */
+async openAskPanel(threadId: string | null) : Promise<void> {
+    await TAURI_INVOKE("open_ask_panel", { threadId });
+},
+async closeAskPanel() : Promise<void> {
+    await TAURI_INVOKE("close_ask_panel");
+},
+/**
+ * The thread the panel was last opened on, for a page that loads late.
+ */
+async getAskPanelThread() : Promise<string | null> {
+    return await TAURI_INVOKE("get_ask_panel_thread");
+},
+/**
+ * The panel switched thread: questions asked with it in front go there.
+ */
+async setAskPanelThread(threadId: string | null) : Promise<void> {
+    await TAURI_INVOKE("set_ask_panel_thread", { threadId });
+},
+/**
+ * What Ask shows in the speaking pill, for a pill page that loads late.
+ */
+async getAskPillState() : Promise<AskBusyEvent> {
+    return await TAURI_INVOKE("get_ask_pill_state");
+},
+/**
+ * Recent threads, newest first.
+ */
+async listAskThreads() : Promise<Result<ThreadListItem[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_ask_threads") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getAskThread(id: string) : Promise<Result<Thread | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_ask_thread", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * A question typed in the panel. Returns the thread it went into.
+ */
+async askTyped(threadId: string | null, text: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("ask_typed", { threadId, text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stops the answer being worked on.
+ */
+async cancelAsk() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cancel_ask") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Reads an answer's spoken part aloud again.
+ */
+async replayAskAnswer(threadId: string, answerId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("replay_ask_answer", { threadId, answerId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Asks a question again in another thread (`None`: a new one).
+ */
+async moveAskQuestion(fromThreadId: string, questionId: string, toThreadId: string | null) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("move_ask_question", { fromThreadId, questionId, toThreadId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stops answering a thread from a running agent's conversation.
+ */
+async unlinkAskAgent(threadId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("unlink_ask_agent", { threadId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteAskThread(id: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_ask_thread", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Deletes every thread, and the Claude Code sessions behind them.
+ */
+async deleteAllAskThreads() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_all_ask_threads") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Merges the thread the tidy-up suggested into this one.
+ */
+async mergeAskThreads(threadId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("merge_ask_threads", { threadId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Declines a merge suggestion.
+ */
+async keepAskThreadsApart(threadId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("keep_ask_threads_apart", { threadId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeAskSettings(settings: AskSettings) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_ask_settings", { settings }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -1211,6 +1361,11 @@ async getHandyExecutable() : Promise<string | null> {
 
 
 export const events = __makeEvents__<{
+askBusyEvent: AskBusyEvent,
+askDeletedEvent: AskDeletedEvent,
+askDeltaEvent: AskDeltaEvent,
+askOpenEvent: AskOpenEvent,
+askThreadEvent: AskThreadEvent,
 historyUpdatePayload: HistoryUpdatePayload,
 meetingChangedEvent: MeetingChangedEvent,
 meetingLevelsEvent: MeetingLevelsEvent,
@@ -1227,6 +1382,11 @@ streamTextEvent: StreamTextEvent,
 transcriptionCompleteEvent: TranscriptionCompleteEvent,
 transcriptionJob: TranscriptionJob
 }>({
+askBusyEvent: "ask-busy-event",
+askDeletedEvent: "ask-deleted-event",
+askDeltaEvent: "ask-delta-event",
+askOpenEvent: "ask-open-event",
+askThreadEvent: "ask-thread-event",
 historyUpdatePayload: "history-update-payload",
 meetingChangedEvent: "meeting-changed-event",
 meetingLevelsEvent: "meeting-levels-event",
@@ -1255,6 +1415,36 @@ export type ActionItem = { text: string;
  * A speaker id when the owner is one of the speakers, else a name.
  */
 owner: string | null; due: string | null; at_ms: number | null; done: boolean }
+/**
+ * A running Claude Code session a thread answers from.
+ */
+export type AgentLink = { session_id: string; name: string; cwd: string; 
+/**
+ * Off once the user unlinks it: later questions start fresh.
+ */
+linked: boolean }
+export type Answer = { id: string; text: string; status: AnswerStatus; at: number; model: string | null; 
+/**
+ * From asking to the first words, in milliseconds.
+ */
+first_words_ms: number | null; error: AskError | null; 
+/**
+ * Why it wasn't read aloud, when it wasn't.
+ */
+not_spoken?: SpeakRefusal | null; 
+/**
+ * Some of it was read aloud.
+ */
+spoken?: boolean }
+export type AnswerStatus = 
+/**
+ * Waiting for the first words.
+ */
+"thinking" | "streaming" | "done" | "failed" | 
+/**
+ * Stopped by a newer question or by the user.
+ */
+"cancelled"
 /**
  * The container-level `serde(default)` (backed by the `Default` impl below)
  * guarantees every field — including ones added in the future — falls back to
@@ -1333,7 +1523,72 @@ long_form_chunking?: boolean;
  * not gated on this — that follows model capability. Migrated from the old
  * `overlay_position` (position `none` → style `None`).
  */
-overlay_style?: OverlayStyle; meeting?: MeetingSettings; speech?: SpeechSettings }
+overlay_style?: OverlayStyle; meeting?: MeetingSettings; speech?: SpeechSettings; ask?: AskSettings }
+/**
+ * What Ask shows in the speaking pill: busy while answering, then the
+ * answered thread (with an Open button) for a few seconds.
+ */
+export type AskBusyEvent = { busy: boolean; thread_id: string | null; 
+/**
+ * The answer failed: the pill says so.
+ */
+failed: boolean }
+/**
+ * A thread was deleted.
+ */
+export type AskDeletedEvent = { thread_id: string }
+/**
+ * More of an answer arrived. `reset` drops what came before it (narration
+ * before Claude used a tool).
+ */
+export type AskDeltaEvent = { thread_id: string; answer_id: string; reset: boolean; text: string }
+export type AskError = { code: AskErrorCode; detail: string | null }
+export type AskErrorCode = "claude_not_found" | "timed_out" | "failed"
+/**
+ * Show this thread (`None`: the latest).
+ */
+export type AskOpenEvent = { thread_id: string | null }
+/**
+ * Ask: spoken questions answered by Claude Code. One nested object, so the
+ * settings store keeps one key.
+ */
+export type AskSettings = { 
+/**
+ * Claude Code's model alias for Handy's own threads (`sonnet`, `haiku`,
+ * `opus`). Questions about a running agent use that agent's model.
+ */
+model: string; 
+/**
+ * Speak the short answer as it arrives.
+ */
+read_aloud: boolean; 
+/**
+ * Open the panel with every answer, not just from the pill's button.
+ */
+open_panel: boolean; 
+/**
+ * Send a screenshot of the active window with each spoken question.
+ */
+screenshot: boolean; 
+/**
+ * Answer from a read-only copy of a Claude Code session running in the
+ * active window.
+ */
+use_agents: boolean; 
+/**
+ * Asking again from the same window within this many minutes continues
+ * its thread; 0 keeps it for as long as the window is open.
+ */
+same_window_minutes: number; 
+/**
+ * Threads without a question for this many days are deleted; 0 keeps
+ * them.
+ */
+keep_days: number }
+/**
+ * A thread changed: sent whole.
+ */
+export type AskThreadEvent = { thread: Thread }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; gpu_devices: GpuDeviceOption[] }
@@ -1372,6 +1627,22 @@ export type ChineseScript =
  */
 "traditional_hk"
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
+/**
+ * What went with a question, shown as chips under it.
+ */
+export type ContextNote = { selection_lines: number | null; 
+/**
+ * Text piped in with `handy --ask`.
+ */
+input_lines: number | null; screenshot: boolean; 
+/**
+ * Something was read aloud in that window shortly before.
+ */
+read_aloud: boolean; 
+/**
+ * The running agent whose conversation was copied.
+ */
+agent: string | null }
 export type CustomSounds = { start: boolean; stop: boolean }
 export type Decision = { text: string; at_ms: number | null }
 /**
@@ -1383,6 +1654,7 @@ export type DictationSpan = { start_ms: number; end_ms: number;
  * What was dictated, once the dictation is transcribed.
  */
 text: string | null }
+export type Exchange = { question: Question; answer: Answer }
 export type GpuDeviceOption = { id: string; name: string; total_vram_mb: number }
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean; 
 /**
@@ -1508,6 +1780,10 @@ export type MeetingSummary = { overview: string; decisions: Decision[]; action_i
  * Unix milliseconds.
  */
 created_at: number }
+/**
+ * A suggestion to merge another thread into this one.
+ */
+export type MergeSuggestion = { thread_id: string; title: string }
 export type ModelInfo = { id: string; name: string; description: string; filename: string; source: ModelSource; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[]; supports_language_selection: boolean; is_custom: boolean; supports_streaming: boolean; supports_language_detection: boolean }
 export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }
 /**
@@ -1600,6 +1876,12 @@ export type PromptState =
  * The user kept recording after the call seemed to end.
  */
 { state: "kept" }
+export type Question = { id: string; text: string; via: Via; at: number; context?: ContextNote; 
+/**
+ * Everything sent to Claude Code, screen context included, so a
+ * question moved to another thread can be asked there the same way.
+ */
+prompt?: string | null }
 /**
  * The meeting being recorded, for the tray, the pill and the Meetings page.
  */
@@ -1801,6 +2083,35 @@ export type SummaryEngine =
  * and `Dark` force one of the two palettes Handy already ships.
  */
 export type Theme = "system" | "light" | "dark"
+export type Thread = { id: string; title: string; 
+/**
+ * Replaced by a better one in the background tidy-up.
+ */
+title_is_suggested: boolean; created_at: number; last_used: number; window: WindowKey | null; 
+/**
+ * The app and window title it started in, for the header.
+ */
+app_label: string | null; project_dir: string | null; agent: AgentLink | null; 
+/**
+ * Handy's own Claude Code conversation for this thread.
+ */
+claude_session: string | null; 
+/**
+ * Every Claude Code session Handy made for it, deleted with it.
+ */
+sessions?: string[]; 
+/**
+ * Another thread the tidy-up thinks is about the same thing.
+ */
+merge?: MergeSuggestion | null; 
+/**
+ * Threads the user chose to keep apart from this one.
+ */
+kept_apart?: string[]; exchanges: Exchange[] }
+/**
+ * A thread in the switcher.
+ */
+export type ThreadListItem = { id: string; title: string; app_label: string | null; last_used: number }
 /**
  * How one recorded track lines up with the meeting's clock.
  */
@@ -1866,6 +2177,26 @@ export type TranscriptionOutcome =
 "failed"
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
 export type VadBackend = "silero" | "earshot"
+/**
+ * How a question was asked.
+ */
+export type Via = "voice" | "typed" | 
+/**
+ * `handy --ask` from a script or another tool.
+ */
+"command"
+/**
+ * The window a thread belongs to.
+ */
+export type WindowKey = { 
+/**
+ * The window handle, as a number; only meaningful while it is open.
+ */
+handle: string; 
+/**
+ * The program's file name, e.g. `Code.exe`.
+ */
+exe: string }
 export type WindowsMicrophonePermissionStatus = { supported: boolean; overall_access: PermissionAccess; device_access: PermissionAccess; app_access: PermissionAccess; desktop_app_access: PermissionAccess }
 
 /** tauri-specta globals **/

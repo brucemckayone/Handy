@@ -12,7 +12,8 @@
     "stopMeeting": "Stop Meeting",
     "bookmarkMeeting": "Bookmark the Last {{seconds}} s",
     "recordingMeeting": "● Recording a Meeting Since {{time}}",
-    "openMeetings": "Open Meetings..."
+    "openMeetings": "Open Meetings...",
+    "openAsk": "Open Ask..."
   },
   "sidebar": {
     "general": "General",
@@ -23,7 +24,8 @@
     "debug": "Debug",
     "about": "About",
     "meetings": "Meetings",
-    "readAloud": "Read Aloud"
+    "readAloud": "Read Aloud",
+    "ask": "Ask"
   },
   "onboarding": {
     "customModelDescription": "Not officially supported",
@@ -364,6 +366,10 @@
           "read_aloud": {
             "name": "Read Aloud",
             "description": "Reads the selected text aloud, or stops reading."
+          },
+          "ask": {
+            "name": "Ask",
+            "description": "Hold to ask Claude Code a question about what's on screen."
           }
         },
         "errors": {
@@ -1271,6 +1277,143 @@
       "claude": "Claude Code",
       "claudeDescription": "Reads Claude's replies aloud, and tells you when it needs you. Add these hooks to ~/.claude/settings.json.",
       "copyHooks": "Copy hooks"
+    }
+  },
+  "ask": {
+    "pill": {
+      "label": "Ask",
+      "thinking": "Thinking…",
+      "answering": "Answering",
+      "answered": "Answered",
+      "failed": "No answer",
+      "open": "Open",
+      "openPanel": "Open the answer",
+      "cancel": "Stop asking"
+    },
+    "panel": {
+      "switchThread": "Switch thread",
+      "recent": "Recent threads",
+      "newThread": "New thread",
+      "close": "Close (Esc)",
+      "expiry_one": "Threads are deleted after a day without a question.",
+      "expiry_other": "Threads are deleted after {{count}} days without a question.",
+      "expiryNever": "Threads are kept until you delete them.",
+      "emptyTitle": "Ask anything",
+      "emptyBody": "Hold {{shortcut}} and speak, or type below. Your selection, the window's name and a screenshot go with the question.",
+      "followUpLabel": "Follow-up question",
+      "followUp": "Type a follow-up…",
+      "firstQuestion": "Type a question…",
+      "send": "Send",
+      "voiceHint": "Hold {{shortcut}} to ask by voice",
+      "via": {
+        "voice": "Voice",
+        "typed": "Typed",
+        "command": "Command"
+      },
+      "spoken": "Spoken",
+      "speaking": "Speaking",
+      "notSpoken": {
+        "quiet_in_meeting": "Not spoken: a meeting is recording",
+        "not_installed": "Not spoken: the voice isn't downloaded",
+        "nothing_to_read": "Spoken"
+      },
+      "thinking": "Thinking…",
+      "stopped": "Stopped",
+      "replay": "Read again",
+      "copy": "Copy",
+      "copied": "Copied",
+      "move": "Move to another thread",
+      "moveTo": "Ask it again in",
+      "moveNew": "A new thread",
+      "delete": "Delete thread",
+      "speakingBar": "Speaking the answer",
+      "stop": "Stop",
+      "agent": "Agent {{name}}",
+      "unlink": "Unlink agent",
+      "unlinked": "Unlinked: the next question starts fresh",
+      "agentNotice": "Answers come from a read-only copy of agent {{name}}'s conversation. The agent itself is not interrupted.",
+      "mergeSuggestion": "This looks related to “{{title}}”. Merge the two threads?",
+      "merge": "Merge",
+      "keepApart": "Keep apart",
+      "chips": {
+        "selection_one": "Selection · 1 line",
+        "selection_other": "Selection · {{count}} lines",
+        "screenshot": "Screenshot",
+        "readAloud": "Read aloud earlier",
+        "input_one": "Piped input · 1 line",
+        "input_other": "Piped input · {{count}} lines"
+      },
+      "firstWords": "{{model}} · first words in {{seconds}} s",
+      "firstWordsNoModel": "First words in {{seconds}} s",
+      "errors": {
+        "claude_not_found": {
+          "title": "Claude Code isn't installed",
+          "body": "Handy looks for claude on your PATH and in your user folder's .local\\bin. Install Claude Code, then ask again."
+        },
+        "timed_out": {
+          "title": "No answer after 3 minutes",
+          "body": "Claude was still working, so Handy stopped it. Nothing was changed. Try a narrower question."
+        },
+        "failed": {
+          "title": "Claude Code couldn't answer",
+          "body": "{{detail}}"
+        }
+      },
+      "askAgain": "Ask again",
+      "now": "now"
+    },
+    "settings": {
+      "askGroup": "Ask",
+      "claude": "Claude Code",
+      "claudeDescription": "Answers come from Claude Code on this computer, signed in with your own account.",
+      "claudeFound": "Found",
+      "claudeMissing": "Not found. Install Claude Code to use Ask.",
+      "model": "Model",
+      "modelDescription": "Sonnet and Haiku both start answering in about 2 seconds. Questions about a running agent use that agent's model.",
+      "models": {
+        "sonnet": "Sonnet",
+        "haiku": "Haiku",
+        "opus": "Opus"
+      },
+      "readAloud": "Read answers aloud",
+      "readAloudDescription": "Speaks the short answer first and leaves the detail in the panel. Uses your Read Aloud voice and speed.",
+      "openPanel": "Open the panel with each answer",
+      "openPanelDescription": "Off: you only see the speaking pill. Its Open button shows the full answer.",
+      "contextGroup": "What goes with a question",
+      "selection": "Selected text and window name",
+      "selectionDescription": "Plus anything you had read aloud in that window in the last 30 minutes.",
+      "always": "Always",
+      "screenshot": "Screenshot of the active window",
+      "screenshotDescription": "Sent with the question to your Claude account, then deleted from this computer.",
+      "agents": "Use a running agent's conversation",
+      "agentsDescription": "Asking from a terminal or editor where Claude Code is running? Handy answers from a read-only copy of that agent's conversation. The agent isn't interrupted.",
+      "tools": "What Claude can do",
+      "toolsDescription": "Read and search files in the matched project folder, and search the web. It can't edit files or run commands.",
+      "readOnly": "Read-only",
+      "threadsGroup": "Threads",
+      "sameWindow": "Same window continues a thread for",
+      "sameWindowDescription": "Ask again from the same window within this time and it joins the same conversation.",
+      "minutes_one": "1 minute",
+      "minutes_other": "{{count}} minutes",
+      "hours_one": "1 hour",
+      "hours_other": "{{count}} hours",
+      "whileOpen": "While it's open",
+      "keep": "Delete threads after",
+      "keepDescription": "Counted from the last question. Deletes the thread and the Claude Code sessions behind it.",
+      "days_one": "1 day",
+      "days_other": "{{count}} days",
+      "never": "Never",
+      "deleteAll": "Delete all threads",
+      "deleteAllDescription_zero": "No threads yet.",
+      "deleteAllDescription_one": "1 thread.",
+      "deleteAllDescription_other": "{{count}} threads.",
+      "deleteAllButton": "Delete all",
+      "deleteAllConfirm": "Delete all threads and their Claude Code sessions?",
+      "appsGroup": "From other apps and agents",
+      "commands": "Commands",
+      "commandsDescription": "Ask from a script or another tool. Run it in a project folder and Claude can read that folder. Piped text goes with the question.",
+      "copyAsk": "Copy the ask command",
+      "copyStdin": "Copy the piped ask command"
     }
   }
 }

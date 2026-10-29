@@ -429,6 +429,45 @@ impl Default for SpeechSettings {
     }
 }
 
+/// Ask: spoken questions answered by Claude Code. One nested object, so the
+/// settings store keeps one key.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
+#[serde(default)]
+pub struct AskSettings {
+    /// Claude Code's model alias for Handy's own threads (`sonnet`, `haiku`,
+    /// `opus`). Questions about a running agent use that agent's model.
+    pub model: String,
+    /// Speak the short answer as it arrives.
+    pub read_aloud: bool,
+    /// Open the panel with every answer, not just from the pill's button.
+    pub open_panel: bool,
+    /// Send a screenshot of the active window with each spoken question.
+    pub screenshot: bool,
+    /// Answer from a read-only copy of a Claude Code session running in the
+    /// active window.
+    pub use_agents: bool,
+    /// Asking again from the same window within this many minutes continues
+    /// its thread; 0 keeps it for as long as the window is open.
+    pub same_window_minutes: u32,
+    /// Threads without a question for this many days are deleted; 0 keeps
+    /// them.
+    pub keep_days: u32,
+}
+
+impl Default for AskSettings {
+    fn default() -> Self {
+        Self {
+            model: "sonnet".to_string(),
+            read_aloud: true,
+            open_panel: false,
+            screenshot: true,
+            use_agents: true,
+            same_window_minutes: 60,
+            keep_days: 7,
+        }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize, Type)]
 #[serde(transparent)]
 pub(crate) struct SecretMap(HashMap<String, String>);
@@ -633,6 +672,8 @@ pub struct AppSettings {
     pub meeting: MeetingSettings,
     #[serde(default)]
     pub speech: SpeechSettings,
+    #[serde(default)]
+    pub ask: AskSettings,
 }
 
 fn default_model() -> String {
@@ -1096,6 +1137,20 @@ pub fn get_default_settings() -> AppSettings {
             current_binding: read_aloud_shortcut.to_string(),
         },
     );
+    #[cfg(target_os = "macos")]
+    let ask_shortcut = "ctrl+option+space";
+    #[cfg(not(target_os = "macos"))]
+    let ask_shortcut = "ctrl+alt+space";
+    bindings.insert(
+        "ask".to_string(),
+        ShortcutBinding {
+            id: "ask".to_string(),
+            name: "Ask".to_string(),
+            description: "Hold to ask Claude Code a question about what's on screen.".to_string(),
+            default_binding: ask_shortcut.to_string(),
+            current_binding: ask_shortcut.to_string(),
+        },
+    );
 
     AppSettings {
         settings_schema_version: default_settings_schema_version(),
@@ -1164,6 +1219,7 @@ pub fn get_default_settings() -> AppSettings {
         overlay_style: default_overlay_style(),
         meeting: MeetingSettings::default(),
         speech: SpeechSettings::default(),
+        ask: AskSettings::default(),
     }
 }
 

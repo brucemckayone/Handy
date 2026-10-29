@@ -12,6 +12,7 @@ import "@/App.css";
 import { MeetingPill } from "./MeetingPill";
 import { MeetingPrompt } from "./MeetingPrompt";
 import { SpeechPill } from "./SpeechPill";
+import { AskPanel } from "./AskPanel";
 
 // The meeting pill, the call prompt and the speaking pill: small windows
 // from one page, told apart by `?view=`. Like the overlay, each sets its own theme.
@@ -27,6 +28,8 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
       <MeetingPrompt />
     ) : view === "speech" ? (
       <SpeechPill />
+    ) : view === "ask" ? (
+      <AskPanel />
     ) : (
       <MeetingPill />
     )}

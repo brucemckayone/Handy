@@ -7,7 +7,8 @@
     "recording_overlay",
     "meeting_pill",
     "meeting_prompt",
-    "speech_pill"
+    "speech_pill",
+    "ask_panel"
   ],
   "permissions": [
     "core:default",

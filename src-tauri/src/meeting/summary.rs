@@ -11,14 +11,14 @@ use once_cell::sync::Lazy;
 use serde::Deserialize;
 use std::collections::HashSet;
 use std::io::Write;
-use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::AppHandle;
 
 use super::store::{ActionItem, BookmarkNote, Decision, Meeting, MeetingStatus, MeetingSummary};
 use super::MeetingManager;
+use crate::claude_cli;
 use crate::settings::{get_settings, AppSettings, SummaryEngine};
 
 /// Long meetings take a while; past this the summary is given up.
@@ -296,54 +296,18 @@ async fn summarise_locally(
     run_local(&prompt, settings).await
 }
 
-/// The `claude` command, from PATH or where its installers put it.
-pub fn find_claude() -> Option<PathBuf> {
-    let names: &[&str] = if cfg!(windows) {
-        &["claude.exe", "claude.cmd"]
-    } else {
-        &["claude"]
-    };
-    let mut dirs: Vec<PathBuf> = std::env::var_os("PATH")
-        .map(|p| std::env::split_paths(&p).collect())
-        .unwrap_or_default();
-    let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"));
-    if let Some(home) = home.map(PathBuf::from) {
-        dirs.push(home.join(".local").join("bin"));
-        dirs.push(home.join(".claude").join("local"));
-    }
-    if let Some(appdata) = std::env::var_os("APPDATA") {
-        dirs.push(PathBuf::from(appdata).join("npm"));
-    }
-    dirs.into_iter()
-        .flat_map(|dir| names.iter().map(move |name| dir.join(name)))
-        .find(|path| path.is_file())
-}
-
 fn run_claude_code(prompt: &str) -> Result<String> {
-    let claude = find_claude().ok_or_else(|| anyhow!("claude_not_found"))?;
+    let claude = claude_cli::find_claude().ok_or_else(|| anyhow!("claude_not_found"))?;
     // An empty folder, so Claude Code reads no project files or settings.
     let workdir = std::env::temp_dir().join("handy-meeting-summary");
     std::fs::create_dir_all(&workdir)?;
-    let args = ["-p", "--output-format", "json", "--max-turns", "1"];
-    let is_script = claude
-        .extension()
-        .is_some_and(|e| e.eq_ignore_ascii_case("cmd"));
-    let mut command = if is_script {
-        let mut c = Command::new("cmd");
-        c.arg("/C").arg(&claude).args(args);
-        c
-    } else {
-        let mut c = Command::new(&claude);
-        c.args(args);
-        c
-    };
-    command
+    let mut child = claude_cli::command(&claude)
+        .args(["-p", "--output-format", "json", "--max-turns", "1"])
         .current_dir(&workdir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    super::hide_console(&mut command);
-    let mut child = command.spawn()?;
+        .stderr(Stdio::piped())
+        .spawn()?;
     let mut stdin = child.stdin.take().ok_or_else(|| anyhow!("No stdin"))?;
     let input = prompt.to_string();
     let writer = std::thread::spawn(move || stdin.write_all(input.as_bytes()));
@@ -364,8 +328,7 @@ fn run_claude_code(prompt: &str) -> Result<String> {
             break status;
         }
         if started.elapsed() > TIMEOUT {
-            let _ = child.kill();
-            let _ = child.wait();
+            claude_cli::kill_tree(&mut child);
             return Err(anyhow!("Claude Code took too long"));
         }
         std::thread::sleep(Duration::from_millis(250));

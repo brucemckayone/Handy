@@ -119,6 +119,11 @@ impl SpeechManager {
         self.speaking.load(Ordering::Acquire)
     }
 
+    /// Counts stops: a caller speaking in parts can tell the user stopped it.
+    pub fn stops(&self) -> u64 {
+        self.generation.load(Ordering::Acquire)
+    }
+
     fn set_speaking(&self, speaking: bool) {
         if self.speaking.swap(speaking, Ordering::AcqRel) != speaking {
             let _ = SpeechStateEvent { speaking }.emit(&self.app);
@@ -256,7 +261,7 @@ pub fn speak(app: &AppHandle, text: &str) {
     }
 }
 
-fn refused(app: &AppHandle, refusal: SpeakRefusal) {
+pub(crate) fn refused(app: &AppHandle, refusal: SpeakRefusal) {
     info!("Not reading aloud: {refusal:?}");
     let _ = SpeechRefusedEvent { refusal }.emit(app);
     pill::notice(app);
@@ -285,9 +290,17 @@ impl crate::actions::ShortcutAction for ReadAloudAction {
             return;
         }
         let app = app.clone();
+        // Noted now, while the window read from is still in front.
+        let window = crate::ask::window::foreground();
         // Copying the selection waits for the shortcut's keys to be let go.
         std::thread::spawn(move || match selection::copy_selection(&app) {
-            Some(text) => speak(&app, &text),
+            Some(text) => {
+                // A question asked from this window soon after knows about it.
+                if let Some(window) = window {
+                    crate::ask::recent::remember(window.key(), &text);
+                }
+                speak(&app, &text);
+            }
             None => refused(&app, SpeakRefusal::NothingToRead),
         });
     }

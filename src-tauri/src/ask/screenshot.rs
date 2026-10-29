@@ -160,7 +160,79 @@ fn grab(handle: isize) -> Option<Image> {
     }
 }
 
-#[cfg(not(windows))]
+/// Copies window `handle` (its window number) with `screencapture`.
+#[cfg(target_os = "macos")]
+fn grab(handle: isize) -> Option<Image> {
+    if !screen_capture_allowed() {
+        return None;
+    }
+    let dir = dir();
+    std::fs::create_dir_all(&dir).ok()?;
+    let path = dir.join(format!("{}-window.png", super::new_uuid()));
+    // -x: no camera sound; -o: no window shadow.
+    let captured = std::process::Command::new("/usr/sbin/screencapture")
+        .args(["-x", "-o", "-t", "png", &format!("-l{handle}")])
+        .arg(&path)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success());
+    let image = captured.then(|| read_png(&path)).flatten();
+    let _ = std::fs::remove_file(&path);
+    image
+}
+
+/// Whether Handy may record the screen. Without it other apps' windows come
+/// out blank, so the first refusal asks (macOS shows its prompt once) and
+/// questions go without a screenshot until it is granted.
+#[cfg(target_os = "macos")]
+fn screen_capture_allowed() -> bool {
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGPreflightScreenCaptureAccess() -> bool;
+        fn CGRequestScreenCaptureAccess() -> bool;
+    }
+    // SAFETY: permission queries that take no arguments.
+    let allowed = unsafe { CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess() };
+    if !allowed {
+        log::info!("No screenshot: Screen Recording isn't allowed for Handy");
+    }
+    allowed
+}
+
+/// A PNG's pixels as [`Image`], dropping any alpha.
+#[cfg(any(target_os = "macos", test))]
+fn read_png(path: &Path) -> Option<Image> {
+    let file = std::io::BufReader::new(std::fs::File::open(path).ok()?);
+    let mut decoder = png::Decoder::new(file);
+    decoder.set_transformations(png::Transformations::normalize_to_color8());
+    let mut reader = decoder.read_info().ok()?;
+    let mut buf = vec![0; reader.output_buffer_size()];
+    let info = reader.next_frame(&mut buf).ok()?;
+    let pixels = &buf[..info.buffer_size()];
+    let rgb = match info.color_type {
+        png::ColorType::Rgb => pixels.to_vec(),
+        png::ColorType::Rgba => pixels
+            .chunks_exact(4)
+            .flat_map(|p| [p[0], p[1], p[2]])
+            .collect(),
+        png::ColorType::Grayscale => pixels.iter().flat_map(|&g| [g, g, g]).collect(),
+        png::ColorType::GrayscaleAlpha => pixels
+            .chunks_exact(2)
+            .flat_map(|p| [p[0], p[0], p[0]])
+            .collect(),
+        // normalize_to_color8 expands palettes.
+        png::ColorType::Indexed => return None,
+    };
+    Some(Image {
+        width: info.width,
+        height: info.height,
+        rgb,
+    })
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn grab(_handle: isize) -> Option<Image> {
     None
 }
@@ -200,6 +272,41 @@ mod tests {
             1600,
         );
         assert_eq!(image.width, 3);
+    }
+
+    #[test]
+    fn reads_a_png_dropping_alpha() {
+        let path = std::env::temp_dir().join(format!("handy-read-png-{}.png", std::process::id()));
+        {
+            let file = std::io::BufWriter::new(std::fs::File::create(&path).unwrap());
+            let mut encoder = png::Encoder::new(file, 2, 1);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            encoder
+                .write_header()
+                .unwrap()
+                .write_image_data(&[255, 0, 0, 255, 0, 0, 255, 0])
+                .unwrap();
+        }
+        let image = read_png(&path);
+        let _ = std::fs::remove_file(&path);
+        let image = image.expect("decoded");
+        assert_eq!((image.width, image.height), (2, 1));
+        assert_eq!(image.rgb, [255, 0, 0, 0, 0, 255]);
+    }
+
+    /// Live: in a desktop session with Screen Recording allowed for the
+    /// terminal (`cargo test -- --ignored live`), captures the window in front.
+    #[cfg(target_os = "macos")]
+    #[test]
+    #[ignore]
+    fn live_captures_the_window_in_front() {
+        let window = super::super::window::foreground().expect("a window in front");
+        let path = capture(window.handle).expect("a screenshot");
+        let bytes = std::fs::read(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        println!("{} bytes from {}", bytes.len(), window.label());
+        assert_eq!(&bytes[1..4], b"PNG");
     }
 
     #[cfg(windows)]

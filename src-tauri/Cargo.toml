@@ -172,6 +172,10 @@ objc2 = "0.6"
 objc2-foundation = "0.3"
 objc2-app-kit = "0.3"
 objc2-service-management = "0.3.2"
+# Ask: the window in front, its screenshot, and held modifier keys. Versions
+# track what handy-keys already pulls in.
+objc2-core-foundation = "0.3"
+objc2-core-graphics = "0.3"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk-layer-shell = { version = "0.8", features = ["v0_6"] }

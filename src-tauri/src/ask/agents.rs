@@ -32,6 +32,16 @@ const TERMINALS: &[&str] = &[
     "mintty.exe",
     "tabby.exe",
     "hyper.exe",
+    // macOS: app names, as the window's `exe` holds there.
+    "terminal",
+    "iterm2",
+    "ghostty",
+    "wezterm",
+    "alacritty",
+    "kitty",
+    "warp",
+    "tabby",
+    "hyper",
 ];
 
 #[derive(Debug, Clone, PartialEq)]
@@ -159,7 +169,36 @@ pub fn parents() -> HashMap<u32, u32> {
     map
 }
 
-#[cfg(not(windows))]
+/// Each running process's parent.
+#[cfg(target_os = "macos")]
+pub fn parents() -> HashMap<u32, u32> {
+    let mut map = HashMap::new();
+    // SAFETY: each buffer outlives its call, and its size in bytes is passed
+    // with it.
+    unsafe {
+        let count = libc::proc_listallpids(std::ptr::null_mut(), 0);
+        if count <= 0 {
+            return map;
+        }
+        // Room for processes started since counting.
+        let mut pids = vec![0 as libc::pid_t; count as usize + 64];
+        let bytes = std::mem::size_of_val(pids.as_slice()) as libc::c_int;
+        let count = libc::proc_listallpids(pids.as_mut_ptr().cast(), bytes).max(0) as usize;
+        let size = std::mem::size_of::<libc::proc_bsdinfo>() as libc::c_int;
+        for &pid in &pids[..count.min(pids.len())] {
+            let mut info: libc::proc_bsdinfo = std::mem::zeroed();
+            let filled =
+                libc::proc_pidinfo(pid, libc::PROC_PIDTBSDINFO, 0, (&raw mut info).cast(), size);
+            // A process can end, or be unreadable, between listing and reading.
+            if filled == size {
+                map.insert(pid as u32, info.pbi_ppid);
+            }
+        }
+    }
+    map
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn parents() -> HashMap<u32, u32> {
     HashMap::new()
 }
@@ -338,6 +377,21 @@ mod tests {
             terminals.len()
         );
         assert!(!found.is_empty());
+    }
+
+    #[test]
+    fn a_macos_terminal_with_one_session_is_that_session() {
+        let agents = [agent("handy-8c", "/Users/me/dev/Handy", 100)];
+        let found = pick(&agents, &tree(), &window("Terminal", "", 80));
+        assert_eq!(found.map(|a| a.name.as_str()), Some("handy-8c"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn knows_this_process_parent() {
+        // SAFETY: a plain query.
+        let parent = unsafe { libc::getppid() } as u32;
+        assert_eq!(parents().get(&std::process::id()), Some(&parent));
     }
 
     #[test]

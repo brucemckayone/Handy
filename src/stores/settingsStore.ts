@@ -4,6 +4,9 @@ import { listen } from "@tauri-apps/api/event";
 import type {
   AppSettings as Settings,
   AudioDevice,
+  MeetingSettings,
+  SpeechSettings,
+  AskSettings,
   PostProcessApiFormat,
   ChineseScript,
   TranscribeAcceleratorSetting,
@@ -95,6 +98,9 @@ const settingUpdaters: {
   audio_feedback_volume: (value) =>
     commands.changeAudioFeedbackVolumeSetting(value as number),
   sound_theme: (value) => commands.changeSoundThemeSetting(value as string),
+  meeting: (value) => commands.changeMeetingSettings(value as MeetingSettings),
+  speech: (value) => commands.changeSpeechSettings(value as SpeechSettings),
+  ask: (value) => commands.changeAskSettings(value as AskSettings),
   start_hidden: (value) => commands.changeStartHiddenSetting(value as boolean),
   autostart_enabled: (value) =>
     commands.changeAutostartSetting(value as boolean),

@@ -1,11 +1,13 @@
 mod actions;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 mod apple_intelligence;
+pub mod ask;
 mod audio_feedback;
 pub mod audio_toolkit;
 mod autostart;
 mod catalog;
 mod chinese_script;
+mod claude_cli;
 pub mod cli;
 mod clipboard;
 mod commands;
@@ -15,6 +17,7 @@ mod input;
 mod language_detection;
 mod llm_client;
 mod managers;
+pub mod meeting;
 mod memory;
 mod overlay;
 mod paste_tx;
@@ -23,6 +26,7 @@ mod secure_input;
 mod settings;
 mod shortcut;
 mod signal_handle;
+pub mod speech;
 mod system_languages;
 mod transcription_coordinator;
 mod tray;
@@ -217,6 +221,39 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(history_manager.clone());
     app_handle.manage(tray::TrayState::new());
     app_handle.manage(TranscriptionJobManager::new(app_handle));
+    match meeting::MeetingManager::new(app_handle) {
+        Ok(meetings) => {
+            app_handle.manage(Arc::new(meetings));
+            if let Some(meetings) = meeting::manager(app_handle) {
+                meetings.resume_pending();
+            }
+        }
+        Err(e) => log::error!("Failed to set up meetings: {}", e),
+    }
+    app_handle.manage(speech::SpeechManager::new(app_handle));
+    // Text saved by `handy --speak` when Handy wasn't running; anything else
+    // there is left over from an earlier run.
+    let spooled = speech::spool::take();
+    if speech::spool::requested(&app_handle.state::<CliArgs>()) {
+        for text in spooled {
+            speech::speak(app_handle, &text);
+        }
+    }
+    match ask::AskManager::new(app_handle) {
+        Ok(asks) => {
+            let asks = Arc::new(asks);
+            asks.start();
+            app_handle.manage(asks);
+        }
+        Err(e) => log::error!("Failed to set up Ask: {}", e),
+    }
+    // Questions saved by `handy --ask` when Handy wasn't running, as above.
+    let questions = ask::cli::take();
+    if ask::cli::requested(&app_handle.state::<CliArgs>()) {
+        for saved in questions {
+            ask::ask(app_handle, saved.into_question());
+        }
+    }
 
     // Note: Shortcuts are NOT initialized here.
     // The frontend is responsible for calling the `initialize_shortcuts` command
@@ -301,6 +338,20 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             "copy_last_transcript" => {
                 tray::copy_last_transcript(app);
             }
+            "meeting_toggle" => {
+                let app = app.clone();
+                std::thread::spawn(move || meeting::toggle(&app));
+            }
+            "meeting_bookmark" => {
+                meeting::bookmark(app);
+            }
+            "open_meetings" => {
+                meeting::commands::show_meetings(app);
+            }
+            "open_ask" => {
+                speech::pill::ask_dismissed(app);
+                ask::panel::open(app, None, true);
+            }
             "unload_model" => {
                 let transcription_manager = app.state::<Arc<TranscriptionManager>>();
                 if !transcription_manager.is_model_loaded() {
@@ -369,6 +420,14 @@ fn initialize_core_logic(app_handle: &AppHandle) {
 
     // Create the recording overlay window (hidden by default)
     utils::create_recording_overlay(app_handle);
+
+    // The Ask panel, hidden until opened.
+    ask::panel::create(app_handle);
+
+    // The meeting pill and call prompt windows, and the call watcher.
+    meeting::widgets::create(app_handle);
+    speech::pill::create(app_handle);
+    meeting::detect::start(app_handle);
 }
 
 #[tauri::command]
@@ -628,7 +687,7 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run(cli_args: CliArgs) {
+pub fn run(mut cli_args: CliArgs) {
     // Avoid ggml-metal residency-set teardown assertions when a native engine
     // outlives the Tauri shutdown sequence (#1902). This must happen before
     // transcribe-cpp initializes its Metal device. Advanced users can restore
@@ -649,6 +708,35 @@ pub fn run(cli_args: CliArgs) {
 
     // Detect portable mode before anything else
     portable::init();
+
+    // `handy --speak ...`: save the text for the running Handy to read. With
+    // no Handy running (on Windows), exit rather than become it: scripts and
+    // hooks call these and would wait on this process forever.
+    let speech_request = speech::spool::requested(&cli_args);
+    if speech_request || cli_args.stop_speaking {
+        if !speech::spool::handy_running() {
+            eprintln!("Handy isn't running, so there's nothing to read aloud with.");
+            // A hook's failure would show up in Claude Code; this isn't one.
+            std::process::exit(if cli_args.speak_claude_hook { 0 } else { 1 });
+        }
+        if speech_request {
+            if let Err(e) = speech::spool::save(&cli_args) {
+                eprintln!("Couldn't pass the text on to be read: {e}");
+            }
+        }
+        cli_args.start_hidden = true;
+    }
+    // `handy --ask ...`: the same hand-off, for a question.
+    if ask::cli::requested(&cli_args) {
+        if !speech::spool::handy_running() {
+            eprintln!("Handy isn't running, so there's no one to ask.");
+            std::process::exit(1);
+        }
+        if let Err(e) = ask::cli::save(&cli_args) {
+            eprintln!("Couldn't pass the question on: {e}");
+        }
+        cli_args.start_hidden = true;
+    }
 
     // Parse console logging directives from RUST_LOG, falling back to info-level logging
     // when the variable is unset
@@ -785,6 +873,53 @@ pub fn run(cli_args: CliArgs) {
             commands::history::update_history_limit,
             commands::history::update_recording_retention_period,
             helpers::clamshell::is_laptop,
+            meeting::commands::start_meeting,
+            meeting::commands::stop_meeting,
+            meeting::commands::add_meeting_bookmark,
+            meeting::commands::get_meeting_recording,
+            meeting::commands::list_meetings,
+            meeting::commands::get_meeting,
+            meeting::commands::rename_meeting,
+            meeting::commands::rename_meeting_speaker,
+            meeting::commands::set_meeting_starred,
+            meeting::commands::set_meeting_action_done,
+            meeting::commands::delete_meeting,
+            meeting::commands::retry_meeting,
+            meeting::commands::summarise_meeting,
+            meeting::commands::change_meeting_settings,
+            meeting::commands::get_meeting_output_info,
+            meeting::commands::find_claude_code,
+            meeting::commands::get_speaker_model_status,
+            meeting::commands::download_speaker_model,
+            meeting::commands::respond_to_meeting_prompt,
+            meeting::commands::get_meeting_prompt_state,
+            meeting::commands::open_meetings,
+            meeting::commands::copy_meeting_text,
+            meeting::commands::save_meeting_markdown,
+            speech::commands::get_speech_model_status,
+            speech::commands::download_speech_model,
+            speech::commands::speak_text,
+            speech::commands::stop_speaking,
+            speech::commands::is_speaking,
+            speech::commands::change_speech_settings,
+            speech::commands::get_handy_executable,
+            ask::commands::open_ask_panel,
+            ask::commands::close_ask_panel,
+            ask::commands::get_ask_panel_thread,
+            ask::commands::set_ask_panel_thread,
+            ask::commands::get_ask_pill_state,
+            ask::commands::list_ask_threads,
+            ask::commands::get_ask_thread,
+            ask::commands::ask_typed,
+            ask::commands::cancel_ask,
+            ask::commands::replay_ask_answer,
+            ask::commands::move_ask_question,
+            ask::commands::unlink_ask_agent,
+            ask::commands::delete_ask_thread,
+            ask::commands::delete_all_ask_threads,
+            ask::commands::merge_ask_threads,
+            ask::commands::keep_ask_threads_apart,
+            ask::commands::change_ask_settings,
         ])
         .events(collect_events![
             managers::history::HistoryUpdatePayload,
@@ -793,6 +928,20 @@ pub fn run(cli_args: CliArgs) {
             managers::transcription::StreamPhaseEvent,
             transcription_coordinator::RecordingStateEvent,
             actions::TranscriptionCompleteEvent,
+            meeting::MeetingRecordingEvent,
+            meeting::MeetingChangedEvent,
+            meeting::MeetingLevelsEvent,
+            meeting::widgets::MeetingPromptEvent,
+            meeting::widgets::MeetingPillMessageEvent,
+            meeting::speakers::SpeakerModelEvent,
+            speech::model::SpeechModelEvent,
+            speech::SpeechStateEvent,
+            speech::SpeechRefusedEvent,
+            ask::AskThreadEvent,
+            ask::AskDeltaEvent,
+            ask::AskDeletedEvent,
+            ask::AskBusyEvent,
+            ask::panel::AskOpenEvent,
         ]);
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds
@@ -880,6 +1029,17 @@ pub fn run(cli_args: CliArgs) {
                 signal_handle::send_transcription_input(app, "transcribe_with_post_process", "CLI");
             } else if args.iter().any(|a| a == "--cancel") {
                 crate::utils::cancel_current_operation(app);
+            } else if args.iter().any(|a| a == "--stop-speaking") {
+                speech::spool::take();
+                speech::stop(app);
+            } else if speech::spool::requested_in(&args) {
+                for text in speech::spool::take() {
+                    speech::speak(app, &text);
+                }
+            } else if ask::cli::requested_in(&args) {
+                for saved in ask::cli::take() {
+                    ask::ask(app, saved.into_question());
+                }
             } else {
                 // A second process was launched without remote-control flags
                 // (e.g. the binary run from a shell). On macOS, relaunching the

@@ -49,16 +49,25 @@ pub struct TranscriptionJob {
     pub status: TranscriptionJobStatus,
 }
 
+/// What a job transcribes.
+#[derive(Clone, Debug, PartialEq)]
+enum Job {
+    Entry(i64),
+    Meeting(String),
+}
+
 struct Running {
-    entry_id: i64,
+    job: Job,
     cancelled: Arc<AtomicBool>,
 }
 
 #[derive(Default)]
 struct Jobs {
-    /// Entry ids waiting to be transcribed again. They go before files:
-    /// someone is waiting on them.
+    /// Entry ids waiting to be transcribed again. They go first: someone is
+    /// waiting on them.
     retries: VecDeque<i64>,
+    /// Meetings waiting to be transcribed, before files.
+    meetings: VecDeque<String>,
     /// Entry ids of files waiting to be transcribed.
     files: VecDeque<i64>,
     running: Option<Running>,
@@ -68,13 +77,31 @@ impl Jobs {
     fn has(&self, entry_id: i64) -> bool {
         self.running
             .as_ref()
-            .is_some_and(|r| r.entry_id == entry_id)
+            .is_some_and(|r| r.job == Job::Entry(entry_id))
             || self.retries.contains(&entry_id)
             || self.files.contains(&entry_id)
     }
 
+    fn has_meeting(&self, id: &str) -> bool {
+        self.running
+            .as_ref()
+            .is_some_and(|r| matches!(&r.job, Job::Meeting(m) if m == id))
+            || self.meetings.iter().any(|m| m == id)
+    }
+
     fn is_idle(&self) -> bool {
-        self.running.is_none() && self.retries.is_empty() && self.files.is_empty()
+        self.running.is_none()
+            && self.retries.is_empty()
+            && self.meetings.is_empty()
+            && self.files.is_empty()
+    }
+
+    fn next(&mut self) -> Option<Job> {
+        self.retries
+            .pop_front()
+            .map(Job::Entry)
+            .or_else(|| self.meetings.pop_front().map(Job::Meeting))
+            .or_else(|| self.files.pop_front().map(Job::Entry))
     }
 
     /// Drops the entry from the queues; whether it was in one.
@@ -191,7 +218,11 @@ impl TranscriptionJobManager {
         let (was_queued, idle) = {
             let mut jobs = self.lock();
             let was_queued = jobs.unqueue(entry_id);
-            if let Some(running) = jobs.running.as_ref().filter(|r| r.entry_id == entry_id) {
+            if let Some(running) = jobs
+                .running
+                .as_ref()
+                .filter(|r| r.job == Job::Entry(entry_id))
+            {
                 running.cancelled.store(true, Ordering::Release);
             }
             self.sync_job_active(&jobs);
@@ -210,6 +241,39 @@ impl TranscriptionJobManager {
         }
     }
 
+    /// Queues a recorded meeting to be transcribed, unless it already is.
+    pub fn queue_meeting(&self, id: &str) {
+        {
+            let mut jobs = self.lock();
+            if jobs.has_meeting(id) {
+                return;
+            }
+            jobs.meetings.push_back(id.to_string());
+            self.sync_job_active(&jobs);
+        }
+        crate::tray::update_tray_menu(&self.app);
+        self.wake.notify_one();
+    }
+
+    /// Stops a meeting's transcription: a queued one is dropped, a running
+    /// one stops before its next chunk. Whether it was queued or running.
+    pub fn cancel_meeting(&self, id: &str) -> bool {
+        let mut jobs = self.lock();
+        let before = jobs.meetings.len();
+        jobs.meetings.retain(|m| m != id);
+        let mut found = jobs.meetings.len() != before;
+        if let Some(running) = jobs
+            .running
+            .as_ref()
+            .filter(|r| matches!(&r.job, Job::Meeting(m) if m == id))
+        {
+            running.cancelled.store(true, Ordering::Release);
+            found = true;
+        }
+        self.sync_job_active(&jobs);
+        found
+    }
+
     /// Keeps the model held for as long as any job is queued or running.
     fn sync_job_active(&self, jobs: &Jobs) {
         self.app
@@ -225,13 +289,11 @@ impl TranscriptionJobManager {
 
     fn run_jobs(&self) {
         loop {
-            let (entry_id, cancelled) = {
+            let (job, cancelled) = {
                 let mut jobs = self.lock();
-                let entry_id = loop {
-                    if let Some(entry_id) =
-                        jobs.retries.pop_front().or_else(|| jobs.files.pop_front())
-                    {
-                        break entry_id;
+                let job = loop {
+                    if let Some(job) = jobs.next() {
+                        break job;
                     }
                     jobs = self
                         .wake
@@ -240,17 +302,22 @@ impl TranscriptionJobManager {
                 };
                 let cancelled = Arc::new(AtomicBool::new(false));
                 jobs.running = Some(Running {
-                    entry_id,
+                    job: job.clone(),
                     cancelled: Arc::clone(&cancelled),
                 });
-                (entry_id, cancelled)
+                (job, cancelled)
             };
-            self.emit(entry_id, TranscriptionJobStatus::Running { percent: 0 });
+            if let Job::Entry(entry_id) = job {
+                self.emit(entry_id, TranscriptionJobStatus::Running { percent: 0 });
+            }
 
             // A panic fails only this job; the rest of the loop still has to
             // run, or the model would stay held and the queue stuck.
-            let result = catch_unwind(AssertUnwindSafe(|| self.run_job(entry_id, &cancelled)))
-                .unwrap_or_else(|payload| Err(crashed(payload.as_ref())));
+            let result = catch_unwind(AssertUnwindSafe(|| match &job {
+                Job::Entry(entry_id) => self.run_job(*entry_id, &cancelled),
+                Job::Meeting(id) => crate::meeting::transcribe::run(&self.app, id, &cancelled),
+            }))
+            .unwrap_or_else(|payload| Err(crashed(payload.as_ref())));
 
             let idle = {
                 let mut jobs = self.lock();
@@ -266,16 +333,27 @@ impl TranscriptionJobManager {
                 }
                 crate::tray::update_tray_menu(&self.app);
             }
-            let status = match result {
-                Err(e) if !cancelled.load(Ordering::Acquire) => {
-                    warn!("Transcription of history entry {} failed: {}", entry_id, e);
-                    TranscriptionJobStatus::Failed {
-                        error: e.to_string(),
+            match job {
+                Job::Entry(entry_id) => {
+                    let status = match result {
+                        Err(e) if !cancelled.load(Ordering::Acquire) => {
+                            warn!("Transcription of history entry {} failed: {}", entry_id, e);
+                            TranscriptionJobStatus::Failed {
+                                error: e.to_string(),
+                            }
+                        }
+                        _ => TranscriptionJobStatus::Finished,
+                    };
+                    self.emit(entry_id, status);
+                }
+                Job::Meeting(id) => {
+                    if let Err(e) = result {
+                        if !cancelled.load(Ordering::Acquire) {
+                            crate::meeting::transcribe::failed(&self.app, &id, &e);
+                        }
                     }
                 }
-                _ => TranscriptionJobStatus::Finished,
-            };
-            self.emit(entry_id, status);
+            }
         }
     }
 
@@ -348,19 +426,24 @@ struct Control<'a> {
     percent: Cell<u8>,
 }
 
+/// Blocks while a dictation is under way; `false` once `cancelled` is set.
+/// Dictation goes first: wait out a recording and its transcription. A chunk
+/// started while a stream is open would end that stream.
+pub(crate) fn wait_for_dictation(app: &AppHandle, cancelled: &AtomicBool) -> bool {
+    loop {
+        if cancelled.load(Ordering::Acquire) {
+            return false;
+        }
+        if !crate::tray::dictation_in_progress(app) {
+            return true;
+        }
+        thread::sleep(DICTATION_POLL);
+    }
+}
+
 impl ChunkControl for Control<'_> {
     fn proceed(&self) -> bool {
-        // Dictation goes first: wait out a recording and its transcription.
-        // A chunk started while a stream is open would end that stream.
-        loop {
-            if self.cancelled.load(Ordering::Acquire) {
-                return false;
-            }
-            if !crate::tray::dictation_in_progress(&self.manager.app) {
-                return true;
-            }
-            thread::sleep(DICTATION_POLL);
-        }
+        wait_for_dictation(&self.manager.app, self.cancelled)
     }
 
     fn progress(&self, done: usize, total: usize) {

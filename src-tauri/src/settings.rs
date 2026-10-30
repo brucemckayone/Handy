@@ -343,6 +343,131 @@ pub enum VadBackend {
     Earshot,
 }
 
+/// Where meeting summaries are written.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SummaryEngine {
+    /// Headless Claude Code (`claude -p`) on the user's own account. Only the
+    /// transcript text is sent.
+    #[default]
+    ClaudeCode,
+    /// The Custom post-processing provider (Ollama on this computer by default).
+    Local,
+}
+
+pub const DEFAULT_MEETING_SUMMARY_PROMPT: &str = "Summarise this meeting in 3 sentences. Then list decisions, and action items with an owner and due date. Mark items owned by \"Me\". Only use what was said; never invent names or dates.";
+
+/// Meeting capture. One nested object, so the settings store keeps one key.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
+#[serde(default)]
+pub struct MeetingSettings {
+    /// Microphone for meetings; `None` uses the dictation microphone.
+    pub microphone: Option<String>,
+    /// Output device whose sound is recorded as the call audio; `None` uses
+    /// the Windows default output.
+    pub output_device: Option<String>,
+    /// How far back a bookmark reaches.
+    pub bookmark_seconds: u32,
+    /// Offer to record when a call app starts using the mic.
+    pub ask_when_call_starts: bool,
+    pub detect_teams: bool,
+    pub detect_zoom: bool,
+    pub detect_browser: bool,
+    /// Stop recording, after a countdown, when the call app releases the mic.
+    pub stop_when_call_ends: bool,
+    /// Tell the people on the call audio apart (Speaker 1-4).
+    pub label_speakers: bool,
+    /// Leave what the user dictates into other apps out of the transcript.
+    pub leave_out_dictation: bool,
+    pub summarise_automatically: bool,
+    pub summary_engine: SummaryEngine,
+    pub summary_prompt: String,
+}
+
+impl Default for MeetingSettings {
+    fn default() -> Self {
+        Self {
+            microphone: None,
+            output_device: None,
+            bookmark_seconds: 30,
+            ask_when_call_starts: true,
+            detect_teams: true,
+            detect_zoom: true,
+            detect_browser: false,
+            stop_when_call_ends: true,
+            label_speakers: true,
+            leave_out_dictation: true,
+            summarise_automatically: true,
+            summary_engine: SummaryEngine::default(),
+            summary_prompt: DEFAULT_MEETING_SUMMARY_PROMPT.to_string(),
+        }
+    }
+}
+
+/// Read aloud. One nested object, so the settings store keeps one key.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
+#[serde(default)]
+pub struct SpeechSettings {
+    /// Which of the voice model's stock voices to use.
+    pub voice: u32,
+    /// 1.0 is the voice model's own pace.
+    pub speed: f32,
+    /// Longer text stops at about this many words.
+    pub max_words: u32,
+    /// Say nothing while a meeting records: the call audio would record it.
+    pub quiet_during_meetings: bool,
+}
+
+impl Default for SpeechSettings {
+    fn default() -> Self {
+        Self {
+            voice: 0,
+            speed: 1.1,
+            max_words: 300,
+            quiet_during_meetings: true,
+        }
+    }
+}
+
+/// Ask: spoken questions answered by Claude Code. One nested object, so the
+/// settings store keeps one key.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
+#[serde(default)]
+pub struct AskSettings {
+    /// Claude Code's model alias for Handy's own threads (`sonnet`, `haiku`,
+    /// `opus`). Questions about a running agent use that agent's model.
+    pub model: String,
+    /// Speak the short answer as it arrives.
+    pub read_aloud: bool,
+    /// Open the panel with every answer, not just from the pill's button.
+    pub open_panel: bool,
+    /// Send a screenshot of the active window with each spoken question.
+    pub screenshot: bool,
+    /// Answer from a read-only copy of a Claude Code session running in the
+    /// active window.
+    pub use_agents: bool,
+    /// Asking again from the same window within this many minutes continues
+    /// its thread; 0 keeps it for as long as the window is open.
+    pub same_window_minutes: u32,
+    /// Threads without a question for this many days are deleted; 0 keeps
+    /// them.
+    pub keep_days: u32,
+}
+
+impl Default for AskSettings {
+    fn default() -> Self {
+        Self {
+            model: "sonnet".to_string(),
+            read_aloud: true,
+            open_panel: false,
+            screenshot: true,
+            use_agents: true,
+            same_window_minutes: 60,
+            keep_days: 7,
+        }
+    }
+}
+
 /// When Handy's spoken-language detector picks the language for Auto.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
@@ -561,6 +686,12 @@ pub struct AppSettings {
     /// `overlay_position` (position `none` → style `None`).
     #[serde(default = "default_overlay_style")]
     pub overlay_style: OverlayStyle,
+    #[serde(default)]
+    pub meeting: MeetingSettings,
+    #[serde(default)]
+    pub speech: SpeechSettings,
+    #[serde(default)]
+    pub ask: AskSettings,
 }
 
 fn default_model() -> String {
@@ -990,6 +1121,58 @@ pub fn get_default_settings() -> AppSettings {
             current_binding: "escape".to_string(),
         },
     );
+    #[cfg(target_os = "macos")]
+    let (meeting_shortcut, bookmark_shortcut) = ("ctrl+option+m", "ctrl+option+b");
+    #[cfg(not(target_os = "macos"))]
+    let (meeting_shortcut, bookmark_shortcut) = ("ctrl+alt+m", "ctrl+alt+b");
+    bindings.insert(
+        "meeting_toggle".to_string(),
+        ShortcutBinding {
+            id: "meeting_toggle".to_string(),
+            name: "Start or Stop a Meeting".to_string(),
+            description: "Starts recording a meeting, or stops the one being recorded.".to_string(),
+            default_binding: meeting_shortcut.to_string(),
+            current_binding: meeting_shortcut.to_string(),
+        },
+    );
+    bindings.insert(
+        "meeting_bookmark".to_string(),
+        ShortcutBinding {
+            id: "meeting_bookmark".to_string(),
+            name: "Bookmark a Meeting".to_string(),
+            description: "Bookmarks what was just said in the meeting being recorded.".to_string(),
+            default_binding: bookmark_shortcut.to_string(),
+            current_binding: bookmark_shortcut.to_string(),
+        },
+    );
+    #[cfg(target_os = "macos")]
+    let read_aloud_shortcut = "ctrl+option+r";
+    #[cfg(not(target_os = "macos"))]
+    let read_aloud_shortcut = "ctrl+alt+r";
+    bindings.insert(
+        "read_aloud".to_string(),
+        ShortcutBinding {
+            id: "read_aloud".to_string(),
+            name: "Read Aloud".to_string(),
+            description: "Reads the selected text aloud, or stops reading.".to_string(),
+            default_binding: read_aloud_shortcut.to_string(),
+            current_binding: read_aloud_shortcut.to_string(),
+        },
+    );
+    #[cfg(target_os = "macos")]
+    let ask_shortcut = "ctrl+option+space";
+    #[cfg(not(target_os = "macos"))]
+    let ask_shortcut = "ctrl+alt+space";
+    bindings.insert(
+        "ask".to_string(),
+        ShortcutBinding {
+            id: "ask".to_string(),
+            name: "Ask".to_string(),
+            description: "Hold to ask Claude Code a question about what's on screen.".to_string(),
+            default_binding: ask_shortcut.to_string(),
+            current_binding: ask_shortcut.to_string(),
+        },
+    );
 
     AppSettings {
         settings_schema_version: default_settings_schema_version(),
@@ -1058,6 +1241,9 @@ pub fn get_default_settings() -> AppSettings {
         language_detection: LanguageDetectionMode::default(),
         language_detection_window_secs: default_language_detection_window_secs(),
         overlay_style: default_overlay_style(),
+        meeting: MeetingSettings::default(),
+        speech: SpeechSettings::default(),
+        ask: AskSettings::default(),
     }
 }
 

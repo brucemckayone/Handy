@@ -63,6 +63,25 @@ fn overlay_dimensions(state: &str) -> (f64, f64) {
 }
 
 static LAST_MIC_LEVEL_EMIT: AtomicU64 = AtomicU64::new(0);
+
+/// While a meeting records, its pill sits where the overlay goes; the
+/// overlay moves this far further from the screen edge to stack beside it.
+const MEETING_PILL_STACK: f64 = 62.0;
+static MEETING_PILL_SHOWN: AtomicBool = AtomicBool::new(false);
+
+/// Called when the meeting pill shows or hides.
+pub fn set_meeting_pill_shown(shown: bool) {
+    MEETING_PILL_SHOWN.store(shown, Ordering::Relaxed);
+}
+
+/// Extra distance from the screen edge, in logical pixels.
+fn stack_offset() -> f64 {
+    if MEETING_PILL_SHOWN.load(Ordering::Relaxed) {
+        MEETING_PILL_STACK
+    } else {
+        0.0
+    }
+}
 const EMIT_THROTTLE_MS: u64 = 33; // ~30 FPS
 
 #[cfg(target_os = "macos")]
@@ -258,7 +277,7 @@ fn calculate_overlay_position(
 
     let x = monitor_x + (monitor_width - width) / 2.0;
     let y = match settings.overlay_position {
-        OverlayPosition::Top => monitor_y + OVERLAY_TOP_OFFSET,
+        OverlayPosition::Top => monitor_y + OVERLAY_TOP_OFFSET + stack_offset(),
         OverlayPosition::Bottom => {
             // work_area.position shares monitor.position's global coordinate
             // space, so no monitor offset is added.
@@ -270,7 +289,7 @@ fn calculate_overlay_position(
             #[cfg(not(target_os = "macos"))]
             let bottom = monitor_y + monitor.size().height as f64 / scale;
 
-            bottom - height - OVERLAY_BOTTOM_OFFSET
+            bottom - height - OVERLAY_BOTTOM_OFFSET - stack_offset()
         }
     };
 
@@ -313,6 +332,7 @@ fn windows_overlay_bounds(
     logical_height: f64,
     overlay_position: OverlayPosition,
 ) -> (i32, i32, i32, i32) {
+    let stack = stack_offset();
     // Grow the window with the text scale; offsets stay DPI-only since the
     // card sits flush against the window's screen-edge side.
     let content_scale = scale * text_scale;
@@ -322,11 +342,11 @@ fn windows_overlay_bounds(
         as i32;
     let y = match overlay_position {
         OverlayPosition::Top => {
-            (monitor_position.y as f64 + OVERLAY_TOP_OFFSET * scale).round() as i32
+            (monitor_position.y as f64 + (OVERLAY_TOP_OFFSET + stack) * scale).round() as i32
         }
         OverlayPosition::Bottom => (monitor_position.y as f64 + monitor_size.height as f64
             - height as f64
-            - OVERLAY_BOTTOM_OFFSET * scale)
+            - (OVERLAY_BOTTOM_OFFSET + stack) * scale)
             .round() as i32,
     };
 

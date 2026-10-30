@@ -24,7 +24,7 @@ use crate::managers::history::{HistoryEntry, HistoryManager};
 use crate::managers::model::ModelManager;
 use crate::managers::transcription::TranscriptionManager;
 use crate::settings;
-use crate::tray_i18n::get_tray_translations;
+use crate::tray_i18n::{get_tray_translations, TrayStrings};
 use log::{debug, error, info, trace, warn};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -66,6 +66,13 @@ struct MenuInputs {
     downloaded_models: Vec<(String, String)>,
     locale: String,
     update_checks_enabled: bool,
+    /// Meetings are set up, so the menu offers them.
+    meetings: bool,
+    /// The meeting being recorded: when it started (local `HH:MM`).
+    meeting_started: Option<String>,
+    meeting_shortcut: Option<String>,
+    bookmark_shortcut: Option<String>,
+    bookmark_seconds: u32,
 }
 
 /// Complete description of what the tray should look like.
@@ -336,9 +343,33 @@ fn compute_desired(app: &AppHandle, icon_state: TrayIconState) -> TrayDesired {
         .collect();
     downloaded_models.sort_by(|a, b| a.1.cmp(&b.1));
 
+    let meetings = crate::meeting::manager(app);
+    let meeting_started = meetings.as_ref().and_then(|m| m.recording()).map(|r| {
+        chrono::DateTime::from_timestamp_millis(r.started_at)
+            .map(|t| t.with_timezone(&chrono::Local).format("%H:%M").to_string())
+            .unwrap_or_default()
+    });
+    // A meeting shows as recording even between dictations.
+    let shown_state = if meeting_started.is_some() && icon_state == TrayIconState::Idle {
+        TrayIconState::Recording
+    } else {
+        icon_state
+    };
+    let accelerator = |id: &str| {
+        settings
+            .bindings
+            .get(id)
+            .map(|b| menu_accelerator(&b.current_binding))
+    };
+
     TrayDesired {
-        icon_path: get_icon_path(theme, icon_state, warning),
+        icon_path: get_icon_path(theme, shown_state, warning),
         menu: MenuInputs {
+            meetings: meetings.is_some(),
+            meeting_started,
+            meeting_shortcut: accelerator("meeting_toggle"),
+            bookmark_shortcut: accelerator("meeting_bookmark"),
+            bookmark_seconds: settings.meeting.bookmark_seconds,
             busy: icon_state.is_busy(),
             models_locked,
             warning,
@@ -445,6 +476,86 @@ fn apply_on_main(app: &AppHandle) {
         desired.menu.busy,
         started.elapsed()
     );
+}
+
+/// A binding such as `ctrl+alt+m` as a menu accelerator (`Ctrl+Alt+M`).
+fn menu_accelerator(binding: &str) -> String {
+    binding
+        .split('+')
+        .map(|part| {
+            let mut chars = part.chars();
+            chars
+                .next()
+                .map(|c| c.to_uppercase().chain(chars).collect::<String>())
+                .unwrap_or_default()
+        })
+        .collect::<Vec<_>>()
+        .join("+")
+}
+
+/// A menu item with a shortcut shown beside it, or without one if the
+/// shortcut can't be shown.
+fn item_with_shortcut(
+    app: &AppHandle,
+    id: &str,
+    text: &str,
+    shortcut: Option<&str>,
+) -> tauri::Result<MenuItem<tauri::Wry>> {
+    MenuItem::with_id(app, id, text, true, shortcut)
+        .or_else(|_| MenuItem::with_id(app, id, text, true, None::<&str>))
+}
+
+/// The meeting items at the top of the menu.
+fn meeting_items(
+    app: &AppHandle,
+    inputs: &MenuInputs,
+    strings: &TrayStrings,
+) -> tauri::Result<Vec<MenuItem<tauri::Wry>>> {
+    let english = get_tray_translations(Some("en".to_string()));
+    let pick = |local: &str, fallback: &str| {
+        if local.is_empty() {
+            fallback.to_string()
+        } else {
+            local.to_string()
+        }
+    };
+    let open = MenuItem::with_id(
+        app,
+        "open_meetings",
+        pick(&strings.open_meetings, &english.open_meetings),
+        true,
+        None::<&str>,
+    )?;
+    let Some(started) = &inputs.meeting_started else {
+        let start = item_with_shortcut(
+            app,
+            "meeting_toggle",
+            &pick(&strings.start_meeting, &english.start_meeting),
+            inputs.meeting_shortcut.as_deref(),
+        )?;
+        return Ok(vec![start, open]);
+    };
+    let status = MenuItem::with_id(
+        app,
+        "meeting_status",
+        pick(&strings.recording_meeting, &english.recording_meeting).replace("{{time}}", started),
+        false,
+        None::<&str>,
+    )?;
+    let bookmark = item_with_shortcut(
+        app,
+        "meeting_bookmark",
+        &pick(&strings.bookmark_meeting, &english.bookmark_meeting)
+            .replace("{{seconds}}", &inputs.bookmark_seconds.to_string()),
+        inputs.bookmark_shortcut.as_deref(),
+    )?;
+    let stop = item_with_shortcut(
+        app,
+        "meeting_toggle",
+        &pick(&strings.stop_meeting, &english.stop_meeting),
+        inputs.meeting_shortcut.as_deref(),
+    )?;
+    Ok(vec![status, bookmark, stop, open])
 }
 
 fn load_tray_icon(resolved_icon_path: tauri::Result<PathBuf>) -> tauri::Result<Image<'static>> {
@@ -596,6 +707,32 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
         menu.remove(&check_updates_i)?;
     }
 
+    // Meetings go first, below the version line, then Ask.
+    let mut next = 2;
+    if inputs.meetings {
+        let items = meeting_items(app, inputs, &strings)?;
+        for item in &items {
+            menu.insert(item, next)?;
+            next += 1;
+        }
+        menu.insert(&separator()?, next)?;
+        next += 1;
+    }
+    let english = get_tray_translations(Some("en".to_string()));
+    let open_ask = MenuItem::with_id(
+        app,
+        "open_ask",
+        if strings.open_ask.is_empty() {
+            &english.open_ask
+        } else {
+            &strings.open_ask
+        },
+        true,
+        None::<&str>,
+    )?;
+    menu.insert(&open_ask, next)?;
+    menu.insert(&separator()?, next + 1)?;
+
     // Both layouts start with [version, separator, ...]; slot the warning in
     // right below the version line so it's the first actionable thing seen.
     let mut tooltip = version_label;
@@ -712,7 +849,18 @@ mod tests {
             downloaded_models: vec![("small".to_string(), "Small".to_string())],
             locale: "en".to_string(),
             update_checks_enabled: true,
+            meetings: true,
+            meeting_started: None,
+            meeting_shortcut: Some("Ctrl+Alt+M".to_string()),
+            bookmark_shortcut: Some("Ctrl+Alt+B".to_string()),
+            bookmark_seconds: 30,
         }
+    }
+
+    #[test]
+    fn bindings_become_menu_accelerators() {
+        assert_eq!(super::menu_accelerator("ctrl+alt+m"), "Ctrl+Alt+M");
+        assert_eq!(super::menu_accelerator("option+space"), "Option+Space");
     }
 
     #[test]

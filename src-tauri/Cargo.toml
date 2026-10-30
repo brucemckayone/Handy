@@ -61,6 +61,8 @@ rodio = { version = "0.23.0", default-features = false, features = ["playback", 
 symphonia = { version = "0.5.5", features = ["aac", "alac", "isomp4", "mp3", "aiff"] }
 # Resamples a decoded file to 16 kHz; the version handy-recorder already uses.
 rubato = "5"
+# Ask's screenshot of the active window; the version Tauri already uses.
+png = "0.17"
 handy-recorder = "0.1"
 reqwest = { version = "0.12", features = ["json", "stream", "gzip", "brotli", "deflate"] }
 futures-util = "0.3"
@@ -92,6 +94,9 @@ tauri-plugin-dialog = "2.6"
 hf-hub = { git = "https://github.com/cjpais/hf-hub", branch = "cancellable-downloads", features = [
   "tokio",
 ] }
+# Read aloud: the Supertonic 3 voice model, run in the speech worker process.
+# GPL-free since 2.0 (espeak-ng was removed).
+sherpa-onnx = "2.0.1"
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.3"
@@ -112,6 +117,7 @@ windows = { version = "0.61.3", features = [
   "Win32_Media_Audio_Endpoints",
   "Win32_System_Com_StructuredStorage",
   "Win32_System_DataExchange",
+  "Win32_System_Diagnostics_ToolHelp",
   "Win32_System_LibraryLoader",
   "Win32_System_Ole",
   "Win32_System_Memory",
@@ -119,6 +125,7 @@ windows = { version = "0.61.3", features = [
   "Win32_System_Variant",
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
+  "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_WindowsAndMessaging",
 ] }
 winreg = "0.55"
@@ -165,6 +172,10 @@ objc2 = "0.6"
 objc2-foundation = "0.3"
 objc2-app-kit = "0.3"
 objc2-service-management = "0.3.2"
+# Ask: the window in front, its screenshot, and held modifier keys. Versions
+# track what handy-keys already pulls in.
+objc2-core-foundation = "0.3"
+objc2-core-graphics = "0.3"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk-layer-shell = { version = "0.8", features = ["v0_6"] }

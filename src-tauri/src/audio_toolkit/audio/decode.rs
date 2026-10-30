@@ -111,13 +111,15 @@ pub fn decode_audio_file(path: &Path) -> Result<Vec<f32>> {
 
 /// Mono audio at the file's rate in, 16 kHz out, one resampler step at a
 /// time, so the file's audio is never held whole at its own rate.
-struct Resampled {
+pub(crate) struct Resampled {
     rate: u32,
     /// Input frames taken in so far.
     input_len: usize,
     /// `None` when the file is already at 16 kHz.
     stage: Option<Stage>,
     output: Vec<f32>,
+    /// Output frames already handed out by `take_output`.
+    taken: usize,
 }
 
 struct Stage {
@@ -131,7 +133,7 @@ struct Stage {
 }
 
 impl Resampled {
-    fn new(rate: u32) -> Result<Self> {
+    pub(crate) fn new(rate: u32) -> Result<Self> {
         let target = WHISPER_SAMPLE_RATE as usize;
         let stage = if rate as usize == target {
             None
@@ -156,7 +158,20 @@ impl Resampled {
             input_len: 0,
             stage,
             output: Vec::new(),
+            taken: 0,
         })
+    }
+
+    /// The input rate.
+    pub(crate) fn rate(&self) -> u32 {
+        self.rate
+    }
+
+    /// Hands out the 16 kHz audio resampled so far, for a caller that
+    /// streams it rather than keeping it whole.
+    pub(crate) fn take_output(&mut self) -> Vec<f32> {
+        self.taken += self.output.len();
+        std::mem::take(&mut self.output)
     }
 
     /// The 16 kHz length of `input_len` frames at the file's rate.
@@ -167,7 +182,7 @@ impl Resampled {
         }
     }
 
-    fn push(&mut self, samples: impl Iterator<Item = f32>) -> Result<()> {
+    pub(crate) fn push(&mut self, samples: impl Iterator<Item = f32>) -> Result<()> {
         let Some(stage) = self.stage.as_mut() else {
             let before = self.output.len();
             self.output.extend(samples);
@@ -185,8 +200,9 @@ impl Resampled {
         Ok(())
     }
 
-    fn finish(mut self) -> Result<Vec<f32>> {
-        let expected = self.expected_len(self.input_len);
+    /// The rest of the 16 kHz audio (all of it, if none was taken).
+    pub(crate) fn finish(mut self) -> Result<Vec<f32>> {
+        let expected = self.expected_len(self.input_len).saturating_sub(self.taken);
         let Some(mut stage) = self.stage.take() else {
             return Ok(self.output);
         };
@@ -293,6 +309,22 @@ mod tests {
                     .fold(0.0f32, f32::max);
                 assert!(max_error < 0.04, "{} Hz: error {}", rate, max_error);
             }
+        }
+    }
+
+    #[test]
+    fn output_taken_while_streaming_matches_the_whole() {
+        for rate in [16_000, 48_000] {
+            let mono = tone(rate, rate as usize * 2 + 123);
+            let whole = resample_in_packets(&mono, rate, mono.len());
+            let mut resampled = Resampled::new(rate).unwrap();
+            let mut streamed = Vec::new();
+            for chunk in mono.chunks(480) {
+                resampled.push(chunk.iter().copied()).unwrap();
+                streamed.extend(resampled.take_output());
+            }
+            streamed.extend(resampled.finish().unwrap());
+            assert_eq!(streamed, whole, "{} Hz", rate);
         }
     }
 

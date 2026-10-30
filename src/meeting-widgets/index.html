@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8" />
+    <title>Handy</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: transparent;
+        overflow: hidden;
+        width: 100%;
+        height: 100%;
+      }
+      #root {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+      /* App.css gives :root the app background and a colour scheme, which a
+         transparent window would show as a grey box around the card. */
+      :root,
+      html,
+      body {
+        background: transparent !important;
+        color-scheme: normal !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/meeting-widgets/main.tsx"></script>
+  </body>
+</html>

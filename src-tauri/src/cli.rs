@@ -24,6 +24,39 @@ pub struct CliArgs {
     #[arg(long)]
     pub cancel: bool,
 
+    /// Read this text aloud (sent to running instance; queued after anything
+    /// already being read)
+    #[arg(long, value_name = "TEXT")]
+    pub speak: Option<String>,
+
+    /// Read this file aloud, e.g. markdown (sent to running instance)
+    #[arg(long, value_name = "FILE")]
+    pub speak_file: Option<PathBuf>,
+
+    /// Read what is piped in aloud (sent to running instance)
+    #[arg(long)]
+    pub speak_stdin: bool,
+
+    /// For Claude Code's Stop and Notification hooks: reads the hook input on
+    /// stdin and reads Claude's last reply, or the notice, aloud (sent to
+    /// running instance)
+    #[arg(long)]
+    pub speak_claude_hook: bool,
+
+    /// Stop reading aloud and clear what is queued (sent to running instance)
+    #[arg(long)]
+    pub stop_speaking: bool,
+
+    /// Ask Claude Code this question; the answer is spoken and shown in the
+    /// Ask panel (sent to running instance)
+    #[arg(long, value_name = "QUESTION")]
+    pub ask: Option<String>,
+
+    /// Ask what is piped in, e.g. a diff with a question (sent to running
+    /// instance)
+    #[arg(long)]
+    pub ask_stdin: bool,
+
     /// Enable debug mode with verbose logging
     #[arg(long)]
     pub debug: bool,

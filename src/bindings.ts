@@ -1027,6 +1027,374 @@ async isLaptop() : Promise<Result<boolean, string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async startMeeting() : Promise<Result<RecordingInfo, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("start_meeting") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async stopMeeting() : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("stop_meeting") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async addMeetingBookmark() : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("add_meeting_bookmark") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getMeetingRecording() : Promise<RecordingInfo | null> {
+    return await TAURI_INVOKE("get_meeting_recording");
+},
+async listMeetings(query: string | null) : Promise<Result<MeetingListItem[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_meetings", { query }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getMeeting(id: string) : Promise<Result<Meeting | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_meeting", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async renameMeeting(id: string, title: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("rename_meeting", { id, title }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Names a speaker for this meeting only; `None` or empty goes back to the
+ * default label.
+ */
+async renameMeetingSpeaker(id: string, speaker: string, name: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("rename_meeting_speaker", { id, speaker, name }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setMeetingStarred(id: string, starred: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_meeting_starred", { id, starred }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setMeetingActionDone(id: string, index: number, done: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_meeting_action_done", { id, index, done }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteMeeting(id: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_meeting", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Transcribes an interrupted or failed meeting from the audio it kept.
+ */
+async retryMeeting(id: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("retry_meeting", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async summariseMeeting(id: string, engine: SummaryEngine | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("summarise_meeting", { id, engine }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeMeetingSettings(settings: MeetingSettings) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_meeting_settings", { settings }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getMeetingOutputInfo() : Promise<MeetingOutputInfo> {
+    return await TAURI_INVOKE("get_meeting_output_info");
+},
+/**
+ * Where Claude Code is installed, if Handy can find it.
+ */
+async findClaudeCode() : Promise<string | null> {
+    return await TAURI_INVOKE("find_claude_code");
+},
+async getSpeakerModelStatus() : Promise<SpeakerModelStatus> {
+    return await TAURI_INVOKE("get_speaker_model_status");
+},
+/**
+ * Downloads the model that tells speakers apart. Only when the user asks.
+ */
+async downloadSpeakerModel() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("download_speaker_model") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async respondToMeetingPrompt(choice: PromptChoice, call: CallApp | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("respond_to_meeting_prompt", { choice, call }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getMeetingPromptState() : Promise<PromptState | null> {
+    return await TAURI_INVOKE("get_meeting_prompt_state");
+},
+/**
+ * Opens the Meetings page in the main window.
+ */
+async openMeetings() : Promise<void> {
+    await TAURI_INVOKE("open_meetings");
+},
+async copyMeetingText(text: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("copy_meeting_text", { text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Writes an exported meeting to the file the user picked.
+ */
+async saveMeetingMarkdown(path: string, contents: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_meeting_markdown", { path, contents }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getSpeechModelStatus() : Promise<SpeechModelStatus> {
+    return await TAURI_INVOKE("get_speech_model_status");
+},
+async downloadSpeechModel() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("download_speech_model") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Reads `text` after anything already queued.
+ */
+async speakText(text: string) : Promise<Result<null, SpeakRefusal>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("speak_text", { text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stops reading and clears the queue.
+ */
+async stopSpeaking() : Promise<void> {
+    await TAURI_INVOKE("stop_speaking");
+},
+async isSpeaking() : Promise<boolean> {
+    return await TAURI_INVOKE("is_speaking");
+},
+async changeSpeechSettings(settings: SpeechSettings) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_speech_settings", { settings }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Handy's own executable, for the command lines shown in settings.
+ */
+async getHandyExecutable() : Promise<string | null> {
+    return await TAURI_INVOKE("get_handy_executable");
+},
+/**
+ * Opens the panel on a thread (`None`: the latest), ready for typing.
+ */
+async openAskPanel(threadId: string | null) : Promise<void> {
+    await TAURI_INVOKE("open_ask_panel", { threadId });
+},
+async closeAskPanel() : Promise<void> {
+    await TAURI_INVOKE("close_ask_panel");
+},
+/**
+ * The thread the panel was last opened on, for a page that loads late.
+ */
+async getAskPanelThread() : Promise<string | null> {
+    return await TAURI_INVOKE("get_ask_panel_thread");
+},
+/**
+ * The panel switched thread: questions asked with it in front go there.
+ */
+async setAskPanelThread(threadId: string | null) : Promise<void> {
+    await TAURI_INVOKE("set_ask_panel_thread", { threadId });
+},
+/**
+ * What Ask shows in the speaking pill, for a pill page that loads late.
+ */
+async getAskPillState() : Promise<AskBusyEvent> {
+    return await TAURI_INVOKE("get_ask_pill_state");
+},
+/**
+ * Recent threads, newest first.
+ */
+async listAskThreads() : Promise<Result<ThreadListItem[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_ask_threads") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getAskThread(id: string) : Promise<Result<Thread | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_ask_thread", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * A question typed in the panel. Returns the thread it went into.
+ */
+async askTyped(threadId: string | null, text: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("ask_typed", { threadId, text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stops the answer being worked on.
+ */
+async cancelAsk() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cancel_ask") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Reads an answer's spoken part aloud again.
+ */
+async replayAskAnswer(threadId: string, answerId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("replay_ask_answer", { threadId, answerId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Asks a question again in another thread (`None`: a new one).
+ */
+async moveAskQuestion(fromThreadId: string, questionId: string, toThreadId: string | null) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("move_ask_question", { fromThreadId, questionId, toThreadId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stops answering a thread from a running agent's conversation.
+ */
+async unlinkAskAgent(threadId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("unlink_ask_agent", { threadId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteAskThread(id: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_ask_thread", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Deletes every thread, and the Claude Code sessions behind them.
+ */
+async deleteAllAskThreads() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_all_ask_threads") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Merges the thread the tidy-up suggested into this one.
+ */
+async mergeAskThreads(threadId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("merge_ask_threads", { threadId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Declines a merge suggestion.
+ */
+async keepAskThreadsApart(threadId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("keep_ask_threads_apart", { threadId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeAskSettings(settings: AskSettings) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_ask_settings", { settings }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -1034,15 +1402,43 @@ async isLaptop() : Promise<Result<boolean, string>> {
 
 
 export const events = __makeEvents__<{
+askBusyEvent: AskBusyEvent,
+askDeletedEvent: AskDeletedEvent,
+askDeltaEvent: AskDeltaEvent,
+askOpenEvent: AskOpenEvent,
+askThreadEvent: AskThreadEvent,
 historyUpdatePayload: HistoryUpdatePayload,
+meetingChangedEvent: MeetingChangedEvent,
+meetingLevelsEvent: MeetingLevelsEvent,
+meetingPillMessageEvent: MeetingPillMessageEvent,
+meetingPromptEvent: MeetingPromptEvent,
+meetingRecordingEvent: MeetingRecordingEvent,
 recordingStateEvent: RecordingStateEvent,
+speakerModelEvent: SpeakerModelEvent,
+speechModelEvent: SpeechModelEvent,
+speechRefusedEvent: SpeechRefusedEvent,
+speechStateEvent: SpeechStateEvent,
 streamPhaseEvent: StreamPhaseEvent,
 streamTextEvent: StreamTextEvent,
 transcriptionCompleteEvent: TranscriptionCompleteEvent,
 transcriptionJob: TranscriptionJob
 }>({
+askBusyEvent: "ask-busy-event",
+askDeletedEvent: "ask-deleted-event",
+askDeltaEvent: "ask-delta-event",
+askOpenEvent: "ask-open-event",
+askThreadEvent: "ask-thread-event",
 historyUpdatePayload: "history-update-payload",
+meetingChangedEvent: "meeting-changed-event",
+meetingLevelsEvent: "meeting-levels-event",
+meetingPillMessageEvent: "meeting-pill-message-event",
+meetingPromptEvent: "meeting-prompt-event",
+meetingRecordingEvent: "meeting-recording-event",
 recordingStateEvent: "recording-state-event",
+speakerModelEvent: "speaker-model-event",
+speechModelEvent: "speech-model-event",
+speechRefusedEvent: "speech-refused-event",
+speechStateEvent: "speech-state-event",
 streamPhaseEvent: "stream-phase-event",
 streamTextEvent: "stream-text-event",
 transcriptionCompleteEvent: "transcription-complete-event",
@@ -1055,6 +1451,41 @@ transcriptionJob: "transcription-job"
 
 /** user-defined types **/
 
+export type ActionItem = { text: string; 
+/**
+ * A speaker id when the owner is one of the speakers, else a name.
+ */
+owner: string | null; due: string | null; at_ms: number | null; done: boolean }
+/**
+ * A running Claude Code session a thread answers from.
+ */
+export type AgentLink = { session_id: string; name: string; cwd: string; 
+/**
+ * Off once the user unlinks it: later questions start fresh.
+ */
+linked: boolean }
+export type Answer = { id: string; text: string; status: AnswerStatus; at: number; model: string | null; 
+/**
+ * From asking to the first words, in milliseconds.
+ */
+first_words_ms: number | null; error: AskError | null; 
+/**
+ * Why it wasn't read aloud, when it wasn't.
+ */
+not_spoken?: SpeakRefusal | null; 
+/**
+ * Some of it was read aloud.
+ */
+spoken?: boolean }
+export type AnswerStatus = 
+/**
+ * Waiting for the first words.
+ */
+"thinking" | "streaming" | "done" | "failed" | 
+/**
+ * Stopped by a newer question or by the user.
+ */
+"cancelled"
 /**
  * The container-level `serde(default)` (backed by the `Default` impl below)
  * guarantees every field — including ones added in the future — falls back to
@@ -1138,7 +1569,72 @@ language_detection_window_secs?: number;
  * not gated on this — that follows model capability. Migrated from the old
  * `overlay_position` (position `none` → style `None`).
  */
-overlay_style?: OverlayStyle }
+overlay_style?: OverlayStyle; meeting?: MeetingSettings; speech?: SpeechSettings; ask?: AskSettings }
+/**
+ * What Ask shows in the speaking pill: busy while answering, then the
+ * answered thread (with an Open button) for a few seconds.
+ */
+export type AskBusyEvent = { busy: boolean; thread_id: string | null; 
+/**
+ * The answer failed: the pill says so.
+ */
+failed: boolean }
+/**
+ * A thread was deleted.
+ */
+export type AskDeletedEvent = { thread_id: string }
+/**
+ * More of an answer arrived. `reset` drops what came before it (narration
+ * before Claude used a tool).
+ */
+export type AskDeltaEvent = { thread_id: string; answer_id: string; reset: boolean; text: string }
+export type AskError = { code: AskErrorCode; detail: string | null }
+export type AskErrorCode = "claude_not_found" | "timed_out" | "failed"
+/**
+ * Show this thread (`None`: the latest).
+ */
+export type AskOpenEvent = { thread_id: string | null }
+/**
+ * Ask: spoken questions answered by Claude Code. One nested object, so the
+ * settings store keeps one key.
+ */
+export type AskSettings = { 
+/**
+ * Claude Code's model alias for Handy's own threads (`sonnet`, `haiku`,
+ * `opus`). Questions about a running agent use that agent's model.
+ */
+model: string; 
+/**
+ * Speak the short answer as it arrives.
+ */
+read_aloud: boolean; 
+/**
+ * Open the panel with every answer, not just from the pill's button.
+ */
+open_panel: boolean; 
+/**
+ * Send a screenshot of the active window with each spoken question.
+ */
+screenshot: boolean; 
+/**
+ * Answer from a read-only copy of a Claude Code session running in the
+ * active window.
+ */
+use_agents: boolean; 
+/**
+ * Asking again from the same window within this many minutes continues
+ * its thread; 0 keeps it for as long as the window is open.
+ */
+same_window_minutes: number; 
+/**
+ * Threads without a question for this many days are deleted; 0 keeps
+ * them.
+ */
+keep_days: number }
+/**
+ * A thread changed: sent whole.
+ */
+export type AskThreadEvent = { thread: Thread }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AutoUnavailableReason = 
@@ -1156,6 +1652,22 @@ export type AutoUnavailableReason =
 { kind: "no_match" }
 export type AvailableAccelerators = { transcribe: string[]; gpu_devices: GpuDeviceOption[] }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
+export type Bookmark = { start_ms: number; end_ms: number }
+export type BookmarkNote = { start_ms: number; label: string }
+export type CallApp = "teams" | "zoom" | "browser"
+/**
+ * Something that went wrong while recording, shown with the meeting.
+ */
+export type CaptureProblem = { at_ms: number; 
+/**
+ * `me` or `them`.
+ */
+track: string; 
+/**
+ * `device_lost`, `device_reopened`, `device_unavailable` or
+ * `device_missing_used_default`; the UI words it.
+ */
+kind: string }
 /**
  * Script applied to Mandarin and Cantonese output. Traditional carries its region
  * (Taiwan vs Hong Kong forms, e.g. 裡/裏) rather than guessing it.
@@ -1174,7 +1686,34 @@ export type ChineseScript =
  */
 "traditional_hk"
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
+/**
+ * What went with a question, shown as chips under it.
+ */
+export type ContextNote = { selection_lines: number | null; 
+/**
+ * Text piped in with `handy --ask`.
+ */
+input_lines: number | null; screenshot: boolean; 
+/**
+ * Something was read aloud in that window shortly before.
+ */
+read_aloud: boolean; 
+/**
+ * The running agent whose conversation was copied.
+ */
+agent: string | null }
 export type CustomSounds = { start: boolean; stop: boolean }
+export type Decision = { text: string; at_ms: number | null }
+/**
+ * Time the user spent dictating into another app during the meeting. The
+ * mic audio over it is left out of the transcript.
+ */
+export type DictationSpan = { start_ms: number; end_ms: number; 
+/**
+ * What was dictated, once the dictation is transcribed.
+ */
+text: string | null }
+export type Exchange = { question: Question; answer: Answer }
 export type GpuDeviceOption = { id: string; name: string; total_vram_mb: number }
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean; 
 /**
@@ -1265,6 +1804,111 @@ export type LanguageStatus =
  */
 { kind: "auto_unavailable"; language: string; reason: AutoUnavailableReason }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
+export type Meeting = { id: string; title: string; 
+/**
+ * The title is still the one the summary suggested (or the default).
+ */
+title_is_suggested: boolean; 
+/**
+ * Unix milliseconds.
+ */
+started_at: number; duration_ms: number; status: MeetingStatus; 
+/**
+ * Percent of the audio transcribed, while transcribing.
+ */
+progress: number | null; error: string | null; starred: boolean; 
+/**
+ * The recorded audio is still on disk.
+ */
+has_audio: boolean; segments: TranscriptSegment[]; speakers: Speaker[]; bookmarks: Bookmark[]; dictations: DictationSpan[]; summary: MeetingSummary | null; summary_error: string | null; tracks: TrackTiming[]; problems: CaptureProblem[] }
+/**
+ * Sent when a meeting changes; `meeting` is `None` once it is deleted.
+ */
+export type MeetingChangedEvent = { id: string; meeting: MeetingListItem | null }
+/**
+ * Peak level of each track over the last tenth of a second, 0..1.
+ */
+export type MeetingLevelsEvent = { me: number; them: number }
+/**
+ * One row of the Meetings list.
+ */
+export type MeetingListItem = { id: string; title: string; started_at: number; duration_ms: number; status: MeetingStatus; progress: number | null; error: string | null; starred: boolean; has_audio: boolean; speaker_count: number; bookmark_count: number; open_actions: number; overview: string | null }
+/**
+ * What the meeting's call audio plays through, for the headphones advice.
+ */
+export type MeetingOutputInfo = { name: string | null; 
+/**
+ * The mic will hear other people too, so they may be transcribed twice.
+ */
+is_speakers: boolean }
+/**
+ * A short message on the pill, such as "bookmarked".
+ */
+export type MeetingPillMessageEvent = { message: string }
+/**
+ * The prompt's state; `None` hides it.
+ */
+export type MeetingPromptEvent = { state: PromptState | null }
+/**
+ * Sent when a meeting starts or stops recording, or gains a bookmark.
+ */
+export type MeetingRecordingEvent = { recording: RecordingInfo | null }
+/**
+ * Meeting capture. One nested object, so the settings store keeps one key.
+ */
+export type MeetingSettings = { 
+/**
+ * Microphone for meetings; `None` uses the dictation microphone.
+ */
+microphone: string | null; 
+/**
+ * Output device whose sound is recorded as the call audio; `None` uses
+ * the Windows default output.
+ */
+output_device: string | null; 
+/**
+ * How far back a bookmark reaches.
+ */
+bookmark_seconds: number; 
+/**
+ * Offer to record when a call app starts using the mic.
+ */
+ask_when_call_starts: boolean; detect_teams: boolean; detect_zoom: boolean; detect_browser: boolean; 
+/**
+ * Stop recording, after a countdown, when the call app releases the mic.
+ */
+stop_when_call_ends: boolean; 
+/**
+ * Tell the people on the call audio apart (Speaker 1-4).
+ */
+label_speakers: boolean; 
+/**
+ * Leave what the user dictates into other apps out of the transcript.
+ */
+leave_out_dictation: boolean; summarise_automatically: boolean; summary_engine: SummaryEngine; summary_prompt: string }
+export type MeetingStatus = "recording" | 
+/**
+ * Handy closed while it was recording; the audio up to then is kept
+ * until the user transcribes or discards it.
+ */
+"interrupted" | 
+/**
+ * Queued behind another transcription.
+ */
+"waiting" | "transcribing" | 
+/**
+ * Telling the other speakers apart.
+ */
+"labelling" | "summarising" | "ready" | "failed"
+export type MeetingSummary = { overview: string; decisions: Decision[]; action_items: ActionItem[]; bookmarks: BookmarkNote[]; engine: SummaryEngine; 
+/**
+ * Unix milliseconds.
+ */
+created_at: number }
+/**
+ * A suggestion to merge another thread into this one.
+ */
+export type MergeSuggestion = { thread_id: string; title: string }
 export type ModelInfo = { id: string; name: string; description: string; filename: string; source: ModelSource; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[]; supports_language_selection: boolean; is_custom: boolean; supports_streaming: boolean; supports_language_detection: boolean }
 export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }
 /**
@@ -1317,6 +1961,64 @@ export type PostProcessApiFormat =
  */
 "anthropic"
 export type PostProcessProvider = { id: string; label: string; base_url: string; allow_base_url_edit?: boolean; models_endpoint?: string | null; supports_structured_output?: boolean; api_format?: PostProcessApiFormat }
+/**
+ * What the user chose in the prompt.
+ */
+export type PromptChoice = "record" | "not_now" | 
+/**
+ * Stop asking for this app (it can be turned back on in settings).
+ */
+"never" | 
+/**
+ * Undo "Never".
+ */
+"undo" | "keep_recording" | "stop_now" | "close"
+/**
+ * What the call prompt shows.
+ */
+export type PromptState = 
+/**
+ * A call app started using the mic: record it?
+ */
+{ state: "ask_start"; app: CallApp } | 
+/**
+ * Recording, started from the prompt.
+ */
+{ state: "recording" } | 
+/**
+ * The user said never to ask for this app.
+ */
+{ state: "never"; app: CallApp } | 
+/**
+ * The call ended; the meeting stops in `seconds`.
+ */
+{ state: "ask_end"; app: CallApp; seconds: number } | 
+/**
+ * The meeting stopped and is being transcribed.
+ */
+{ state: "saved"; minutes: number } | 
+/**
+ * The user kept recording after the call seemed to end.
+ */
+{ state: "kept" }
+export type Question = { id: string; text: string; via: Via; at: number; context?: ContextNote; 
+/**
+ * Everything sent to Claude Code, screen context included, so a
+ * question moved to another thread can be asked there the same way.
+ */
+prompt?: string | null }
+/**
+ * The meeting being recorded, for the tray, the pill and the Meetings page.
+ */
+export type RecordingInfo = { id: string; 
+/**
+ * Unix milliseconds.
+ */
+started_at: number; bookmarks: number; 
+/**
+ * A dictation is under way, so the pill shows it too.
+ */
+dictating: boolean }
 /**
  * Recording phase events for windows that follow along (onboarding's Try it).
  */
@@ -1398,6 +2100,65 @@ export type ShortcutActivation =
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
 export type SoundTheme = "marimba" | "pop" | "custom"
 /**
+ * Why something wasn't read.
+ */
+export type SpeakRefusal = 
+/**
+ * The voice model hasn't been downloaded.
+ */
+"not_installed" | 
+/**
+ * A meeting is recording; the call audio would record the speech.
+ */
+"quiet_in_meeting" | 
+/**
+ * Nothing was left to read after the clean-up.
+ */
+"nothing_to_read"
+export type Speaker = { id: string; 
+/**
+ * A name given for this meeting only; `None` shows the default label.
+ */
+name: string | null }
+/**
+ * Progress of the speaker model download.
+ */
+export type SpeakerModelEvent = { downloaded: number; total: number; done: boolean; error: string | null }
+export type SpeakerModelStatus = { installed: boolean; size_bytes: number }
+/**
+ * Progress of the voice model download.
+ */
+export type SpeechModelEvent = { downloaded: number; total: number; done: boolean; error: string | null }
+export type SpeechModelStatus = { installed: boolean; bytes: number; voices: string[] }
+/**
+ * Something wasn't read, and why.
+ */
+export type SpeechRefusedEvent = { refusal: SpeakRefusal }
+/**
+ * Read aloud. One nested object, so the settings store keeps one key.
+ */
+export type SpeechSettings = { 
+/**
+ * Which of the voice model's stock voices to use.
+ */
+voice: number; 
+/**
+ * 1.0 is the voice model's own pace.
+ */
+speed: number; 
+/**
+ * Longer text stops at about this many words.
+ */
+max_words: number; 
+/**
+ * Say nothing while a meeting records: the call audio would record it.
+ */
+quiet_during_meetings: boolean }
+/**
+ * Whether Handy is speaking, for the speaking pill and the tray.
+ */
+export type SpeechStateEvent = { speaking: boolean }
+/**
  * Phase of the streaming overlay card, emitted to drive its UI state.
  */
 export type StreamPhase = 
@@ -1430,11 +2191,74 @@ export type StreamTextEvent = { committed: string; tentative: string }
  */
 export type StreamWorkKind = "transcribing" | "polishing"
 /**
+ * Where meeting summaries are written.
+ */
+export type SummaryEngine = 
+/**
+ * Headless Claude Code (`claude -p`) on the user's own account. Only the
+ * transcript text is sent.
+ */
+"claude_code" | 
+/**
+ * The Custom post-processing provider (Ollama on this computer by default).
+ */
+"local"
+/**
  * UI appearance mode. `System` follows the OS `prefers-color-scheme`; `Light`
  * and `Dark` force one of the two palettes Handy already ships.
  */
 export type Theme = "system" | "light" | "dark"
+export type Thread = { id: string; title: string; 
+/**
+ * Replaced by a better one in the background tidy-up.
+ */
+title_is_suggested: boolean; created_at: number; last_used: number; window: WindowKey | null; 
+/**
+ * The app and window title it started in, for the header.
+ */
+app_label: string | null; project_dir: string | null; agent: AgentLink | null; 
+/**
+ * Handy's own Claude Code conversation for this thread.
+ */
+claude_session: string | null; 
+/**
+ * Every Claude Code session Handy made for it, deleted with it.
+ */
+sessions?: string[]; 
+/**
+ * Another thread the tidy-up thinks is about the same thing.
+ */
+merge?: MergeSuggestion | null; 
+/**
+ * Threads the user chose to keep apart from this one.
+ */
+kept_apart?: string[]; exchanges: Exchange[] }
+/**
+ * A thread in the switcher.
+ */
+export type ThreadListItem = { id: string; title: string; app_label: string | null; last_used: number }
+/**
+ * How one recorded track lines up with the meeting's clock.
+ */
+export type TrackTiming = { 
+/**
+ * `me` or `them`.
+ */
+track: string; 
+/**
+ * When the track's first sample was captured, from the meeting start.
+ */
+start_offset_ms: number; 
+/**
+ * Meeting time per track time: the device clock's drift.
+ */
+scale: number }
 export type TranscribeAcceleratorSetting = "auto" | "cpu" | "gpu"
+export type TranscriptSegment = { 
+/**
+ * Milliseconds from the start of the meeting.
+ */
+start_ms: number; end_ms: number; speaker: string; text: string }
 /**
  * Emitted when a dictation finishes (not on cancel); onboarding uses it to measure speed.
  */
@@ -1478,6 +2302,26 @@ export type TranscriptionOutcome =
 "failed"
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
 export type VadBackend = "silero" | "earshot"
+/**
+ * How a question was asked.
+ */
+export type Via = "voice" | "typed" | 
+/**
+ * `handy --ask` from a script or another tool.
+ */
+"command"
+/**
+ * The window a thread belongs to.
+ */
+export type WindowKey = { 
+/**
+ * The window handle, as a number; only meaningful while it is open.
+ */
+handle: string; 
+/**
+ * The program's file name, e.g. `Code.exe`.
+ */
+exe: string }
 export type WindowsMicrophonePermissionStatus = { supported: boolean; overall_access: PermissionAccess; device_access: PermissionAccess; app_access: PermissionAccess; desktop_app_access: PermissionAccess }
 
 /** tauri-specta globals **/

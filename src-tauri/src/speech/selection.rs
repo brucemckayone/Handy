@@ -74,7 +74,12 @@ fn clipboard_version() -> u32 {
     unsafe { windows::Win32::System::DataExchange::GetClipboardSequenceNumber() }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+fn clipboard_version() -> isize {
+    objc2_app_kit::NSPasteboard::generalPasteboard().changeCount()
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn clipboard_version() -> u64 {
     // No cheap counter here: treat the clipboard as changed after a pause.
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -101,7 +106,24 @@ fn wait_for_modifiers_up() {
     }
 }
 
-#[cfg(not(windows))]
+/// Waits (briefly) until Control, Option, Shift and Command are all let go.
+#[cfg(target_os = "macos")]
+fn wait_for_modifiers_up() {
+    use objc2_core_graphics::{CGEventFlags, CGEventSource, CGEventSourceStateID};
+    let modifiers = CGEventFlags::MaskControl
+        | CGEventFlags::MaskAlternate
+        | CGEventFlags::MaskShift
+        | CGEventFlags::MaskCommand;
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let held = || {
+        CGEventSource::flags_state(CGEventSourceStateID::CombinedSessionState).intersects(modifiers)
+    };
+    while held() && Instant::now() < deadline {
+        std::thread::sleep(POLL);
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn wait_for_modifiers_up() {
     std::thread::sleep(Duration::from_millis(300));
 }

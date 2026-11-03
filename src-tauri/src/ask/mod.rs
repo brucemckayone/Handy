@@ -19,6 +19,7 @@ pub mod screenshot;
 pub mod speaker;
 pub mod store;
 pub mod tidy;
+pub mod timeline;
 pub mod voice;
 pub mod window;
 

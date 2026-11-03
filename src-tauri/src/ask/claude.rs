@@ -4,10 +4,16 @@
 //! Launched lean: no MCP servers and no user settings or hooks, which brings
 //! the first words from ~5 s down to ~2 s. Claude may read and search files
 //! and the web; anything else is refused without asking anyone.
+//!
+//! Pictures go in the message itself (`--input-format stream-json`): handed
+//! over as paths, each one cost a Read call first, ~9 s to the first words
+//! with two of them instead of ~4.5 s.
 
 use anyhow::{anyhow, Result};
+use base64::Engine;
+use log::warn;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
@@ -36,6 +42,8 @@ pub enum Session {
 
 pub struct Request {
     pub prompt: String,
+    /// PNGs sent with the prompt, in order.
+    pub images: Vec<PathBuf>,
     pub session: Session,
     /// `None` keeps the conversation's own model (agent forks).
     pub model: Option<String>,
@@ -109,6 +117,9 @@ pub fn args(request: &Request) -> Vec<String> {
     .iter()
     .map(|s| s.to_string())
     .collect();
+    if !request.images.is_empty() {
+        args.extend(["--input-format".to_string(), "stream-json".to_string()]);
+    }
     if let Some(model) = &request.model {
         args.extend(["--model".to_string(), model.clone()]);
     }
@@ -125,6 +136,43 @@ pub fn args(request: &Request) -> Vec<String> {
         args.extend(["--add-dir".to_string(), dir.display().to_string()]);
     }
     args
+}
+
+/// What goes to Claude Code's stdin: the prompt as it is, or, with pictures,
+/// one stream-json user message holding them ahead of the prompt.
+pub fn input(request: &Request) -> String {
+    if request.images.is_empty() {
+        return request.prompt.clone();
+    }
+    let mut content: Vec<serde_json::Value> = request
+        .images
+        .iter()
+        .filter_map(|p| image_block(p))
+        .collect();
+    content.push(serde_json::json!({ "type": "text", "text": request.prompt }));
+    let message = serde_json::json!({
+        "type": "user",
+        "message": { "role": "user", "content": content },
+    });
+    format!("{message}\n")
+}
+
+/// A picture that can't be read is left out; the question still goes.
+fn image_block(path: &Path) -> Option<serde_json::Value> {
+    match std::fs::read(path) {
+        Ok(bytes) => Some(serde_json::json!({
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": "image/png",
+                "data": base64::engine::general_purpose::STANDARD.encode(bytes),
+            },
+        })),
+        Err(e) => {
+            warn!("Leaving out {}: {}", path.display(), e);
+            None
+        }
+    }
 }
 
 /// Why a question got no answer.
@@ -168,10 +216,10 @@ fn run_with(
         let mut stdin = child.stdin.take().ok_or_else(|| anyhow!("No stdin"))?;
         let stdout = child.stdout.take().ok_or_else(|| anyhow!("No stdout"))?;
         let mut stderr = child.stderr.take().ok_or_else(|| anyhow!("No stderr"))?;
-        let prompt = request.prompt.clone();
+        let input = input(request);
         // Written on its own thread: a full pipe must not hold up the reader.
         std::thread::spawn(move || {
-            let _ = stdin.write_all(prompt.as_bytes());
+            let _ = stdin.write_all(input.as_bytes());
         });
         let (tx, rx) = mpsc::channel::<String>();
         std::thread::spawn(move || {
@@ -324,6 +372,7 @@ mod tests {
     fn request(cwd: PathBuf) -> Request {
         Request {
             prompt: "Question: hi".into(),
+            images: Vec::new(),
             session: Session::New("x".into()),
             model: Some("haiku".into()),
             cwd,
@@ -385,6 +434,7 @@ mod tests {
     fn launches_lean_with_read_only_tools() {
         let request = Request {
             prompt: String::new(),
+            images: Vec::new(),
             session: Session::Fork("abc".into()),
             model: None,
             cwd: PathBuf::from("."),
@@ -398,5 +448,44 @@ mod tests {
         assert!(joined.contains("--resume abc --fork-session"));
         assert!(joined.ends_with("--add-dir proj"));
         assert!(!joined.contains("--model"), "forks keep the agent's model");
+    }
+
+    #[test]
+    fn without_pictures_the_prompt_goes_as_it_is() {
+        let request = request(PathBuf::from("."));
+        assert_eq!(input(&request), "Question: hi");
+        assert!(!args(&request).contains(&"--input-format".to_string()));
+    }
+
+    #[test]
+    fn pictures_go_in_the_message_ahead_of_the_prompt() {
+        let dir = tempfile::tempdir().unwrap();
+        let shot = dir.path().join("grab-1.png");
+        std::fs::write(&shot, b"\x89PNG not really").unwrap();
+        let mut request = request(PathBuf::from("."));
+        request.images = vec![shot, dir.path().join("gone.png")];
+
+        let joined = args(&request).join(" ");
+        assert!(joined.contains("--input-format stream-json"));
+        let sent = input(&request);
+        assert!(sent.ends_with('\n'), "one stream-json line");
+        let message: serde_json::Value = serde_json::from_str(sent.trim_end()).unwrap();
+        assert_eq!(message["type"], "user");
+        let content = message["message"]["content"].as_array().unwrap();
+        // The missing picture is left out; the readable one comes first.
+        assert_eq!(content.len(), 2);
+        assert_eq!(content[0]["type"], "image");
+        assert_eq!(content[0]["source"]["media_type"], "image/png");
+        let data = content[0]["source"]["data"].as_str().unwrap();
+        assert_eq!(
+            base64::engine::general_purpose::STANDARD
+                .decode(data)
+                .unwrap(),
+            b"\x89PNG not really"
+        );
+        assert_eq!(
+            content[1],
+            serde_json::json!({ "type": "text", "text": "Question: hi" })
+        );
     }
 }

@@ -94,11 +94,8 @@ pub fn build(question: &str, context: &ScreenContext) -> String {
                 clip(input.trim(), MAX_SELECTION)
             ));
         }
-        if let Some(path) = &context.screenshot {
-            out.push_str(&format!(
-                "- Screenshot of the active window (read it if it helps): {}\n",
-                path.display()
-            ));
+        if context.screenshot.is_some() {
+            out.push_str("- A screenshot of the active window is attached.\n");
         }
     }
     out.push_str("</handy-ask>\n\nQuestion: ");
@@ -134,7 +131,11 @@ mod tests {
         assert!(prompt.contains("- Active window: \"actions.rs - Handy\" (Code.exe)"));
         assert!(prompt.contains("<selection>\nfn main() {}\n</selection>"));
         assert!(prompt.contains("2 minutes ago"));
-        assert!(prompt.contains("C:/t/shot.png"));
+        assert!(prompt.contains("- A screenshot of the active window is attached."));
+        assert!(
+            !prompt.contains("C:/t/shot.png"),
+            "the picture goes in the message"
+        );
         assert!(prompt.contains("<input>\ndiff --git\n</input>"));
     }
 

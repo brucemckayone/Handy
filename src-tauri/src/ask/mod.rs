@@ -564,12 +564,10 @@ impl AskManager {
         if let Some(agent) = agent {
             add_dirs.push(PathBuf::from(&agent.cwd));
         }
-        if let Some(dir) = question.screen.screenshot.as_ref().and_then(|p| p.parent()) {
-            add_dirs.push(dir.to_path_buf());
-        }
         add_dirs.dedup();
         let request = claude::Request {
             prompt,
+            images: question.screen.screenshot.iter().cloned().collect(),
             session,
             model,
             cwd: self.workspace.clone(),

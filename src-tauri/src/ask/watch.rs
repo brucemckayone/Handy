@@ -9,6 +9,8 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+use super::agents;
+use super::context::{self, Terminal};
 use super::timeline::{Event, What};
 use super::uia::{self, Uia};
 use super::window::{self, WindowInfo};
@@ -35,6 +37,10 @@ pub struct Watched {
     /// The text the app in front was showing as the key went down, where
     /// it can say: a terminal's screen.
     pub text_at_press: Option<String>,
+    /// A terminal's shells and what runs under them.
+    pub terminal: Option<Terminal>,
+    /// The files selected in File Explorer, full paths.
+    pub files: Vec<String>,
     pub events: Vec<Event>,
     /// Where the mouse was, in screen pixels, on the question's clock.
     pub pointer: Vec<(u64, i32, i32)>,
@@ -105,6 +111,15 @@ fn watch(started: Instant, mut front: Option<WindowInfo>, stop: &AtomicBool) -> 
     let mut watched = Watched {
         at_press: at_press.clone(),
         text_at_press: front.as_ref().and_then(|w| showing(&uia, w)),
+        terminal: front
+            .as_ref()
+            .filter(|w| agents::is_terminal(&w.exe))
+            .and_then(|w| context::terminal(w, &agents::processes())),
+        // Shell COM, in the apartment UI Automation set up.
+        files: front
+            .as_ref()
+            .map(context::explorer_selection)
+            .unwrap_or_default(),
         events: Vec::new(),
         pointer: Vec::new(),
     };

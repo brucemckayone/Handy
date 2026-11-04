@@ -447,10 +447,13 @@ pub fn released(app: &AppHandle, text: String, audio: Option<AskAudio>) {
         }
         // Read as the key went down where the app can say; otherwise copied,
         // never from Handy's own panel, and never with Ctrl+C, which would
-        // stop whatever runs in a terminal when nothing is selected.
+        // stop whatever runs in a terminal when nothing is selected. Files
+        // selected in Explorer are already known, and copying them would
+        // only put them on the clipboard.
         let selection = watched.at_press.or_else(|| {
             window
                 .as_ref()
+                .filter(|_| watched.files.is_empty())
                 .and_then(|_| crate::speech::selection::copy_selection_with(&app, CopyKeys::Insert))
         });
         let recent_reads = window
@@ -481,6 +484,8 @@ pub fn released(app: &AppHandle, text: String, audio: Option<AskAudio>) {
                     .filter(|t| !t.trim().is_empty()),
                 selection: selection.filter(|s| !s.trim().is_empty()),
                 window_text,
+                terminal: watched.terminal.take(),
+                files: std::mem::take(&mut watched.files),
                 input: None,
                 recent_reads,
                 screenshot,

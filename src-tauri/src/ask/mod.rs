@@ -11,6 +11,7 @@ pub mod capture;
 pub mod claude;
 pub mod cli;
 pub mod commands;
+pub mod context;
 pub mod expiry;
 pub mod grab;
 pub mod ocr;

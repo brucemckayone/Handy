@@ -127,20 +127,29 @@ pub fn list() -> Vec<Agent> {
     parse(&reader.join().unwrap_or_default())
 }
 
-/// Each running process's parent.
+/// A running process.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Process {
+    pub pid: u32,
+    pub parent: u32,
+    /// Its program's file name, e.g. `pwsh.exe`.
+    pub exe: String,
+}
+
+/// The processes running now.
 #[cfg(windows)]
-pub fn parents() -> HashMap<u32, u32> {
+pub fn processes() -> Vec<Process> {
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Diagnostics::ToolHelp::{
         CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
         TH32CS_SNAPPROCESS,
     };
-    let mut map = HashMap::new();
+    let mut list = Vec::new();
     // SAFETY: the snapshot handle is closed before returning; the entry's
     // size is set as the API requires.
     unsafe {
         let Ok(snapshot) = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) else {
-            return map;
+            return list;
         };
         let mut entry = PROCESSENTRY32W {
             dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
@@ -148,7 +157,13 @@ pub fn parents() -> HashMap<u32, u32> {
         };
         if Process32FirstW(snapshot, &mut entry).is_ok() {
             loop {
-                map.insert(entry.th32ProcessID, entry.th32ParentProcessID);
+                let name = &entry.szExeFile;
+                let len = name.iter().position(|&c| c == 0).unwrap_or(name.len());
+                list.push(Process {
+                    pid: entry.th32ProcessID,
+                    parent: entry.th32ParentProcessID,
+                    exe: String::from_utf16_lossy(&name[..len]),
+                });
                 if Process32NextW(snapshot, &mut entry).is_err() {
                     break;
                 }
@@ -156,12 +171,22 @@ pub fn parents() -> HashMap<u32, u32> {
         }
         let _ = CloseHandle(snapshot);
     }
-    map
+    list
 }
 
 #[cfg(not(windows))]
+pub fn processes() -> Vec<Process> {
+    Vec::new()
+}
+
+/// Each running process's parent.
 pub fn parents() -> HashMap<u32, u32> {
-    HashMap::new()
+    processes().into_iter().map(|p| (p.pid, p.parent)).collect()
+}
+
+/// Whether `exe` (e.g. `WindowsTerminal.exe`) is a terminal.
+pub fn is_terminal(exe: &str) -> bool {
+    TERMINALS.contains(&exe.to_lowercase().as_str())
 }
 
 /// Whether `pid` runs under `ancestor` (directly or further down).
@@ -215,7 +240,7 @@ pub fn pick<'a>(
     }
     // An editor hosts many windows in one program: only the title can tell
     // them apart. A terminal with one session is that session.
-    let terminal = TERMINALS.contains(&window.exe.to_lowercase().as_str());
+    let terminal = is_terminal(&window.exe);
     match under.as_slice() {
         [only] if terminal => Some(only),
         _ => None,

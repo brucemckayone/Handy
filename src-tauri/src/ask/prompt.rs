@@ -6,6 +6,7 @@
 
 use std::path::PathBuf;
 
+use super::context::Terminal;
 use super::timeline::{self, Timeline, What};
 
 /// Selected text past this many characters is cut.
@@ -52,6 +53,9 @@ pub struct ScreenContext {
     pub window_title: Option<String>,
     pub selection: Option<String>,
     pub window_text: Option<WindowText>,
+    pub terminal: Option<Terminal>,
+    /// Files selected in File Explorer, full paths.
+    pub files: Vec<String>,
     /// Text read aloud in that window shortly before, with minutes ago.
     pub recent_reads: Vec<(String, u64)>,
     pub screenshot: Option<PathBuf>,
@@ -69,6 +73,8 @@ impl ScreenContext {
             && self.window_title.is_none()
             && self.selection.is_none()
             && self.window_text.is_none()
+            && self.terminal.is_none()
+            && self.files.is_empty()
             && self.recent_reads.is_empty()
             && self.screenshot.is_none()
             && self.pictures.is_empty()
@@ -122,6 +128,25 @@ pub fn build(question: &str, context: &ScreenContext) -> String {
             out.push_str(&format!(
                 "- Selected text:\n<selection>\n{}\n</selection>\n",
                 clip(selection.trim(), MAX_SELECTION)
+            ));
+        }
+        if let Some(terminal) = &context.terminal {
+            let mut line = format!(
+                "- Shells open in this terminal: {}",
+                terminal.shells.join(", ")
+            );
+            if !terminal.running.is_empty() {
+                line.push_str(&format!(
+                    "; running under them: {}",
+                    terminal.running.join(", ")
+                ));
+            }
+            out.push_str(&format!("{line}.\n"));
+        }
+        if !context.files.is_empty() {
+            out.push_str(&format!(
+                "- Files selected in File Explorer:\n<files>\n{}\n</files>\n",
+                context.files.join("\n")
             ));
         }
         match &context.window_text {
@@ -232,6 +257,8 @@ mod tests {
             window_title: Some("actions.rs - Handy".into()),
             selection: Some("fn main() {}".into()),
             window_text: None,
+            terminal: None,
+            files: Vec::new(),
             recent_reads: vec![("Some notes".into(), 2)],
             screenshot: Some(PathBuf::from("C:/t/shot.png")),
             pictures: Vec::new(),
@@ -344,6 +371,23 @@ mod tests {
             ..Default::default()
         };
         assert!(build("?", &read).contains("read off the screenshot"));
+    }
+
+    #[test]
+    fn a_terminals_shells_and_explorers_files_are_named() {
+        let context = ScreenContext {
+            terminal: Some(Terminal {
+                shells: vec!["PowerShell 7".into(), "WSL".into()],
+                running: vec!["cargo.exe".into()],
+            }),
+            files: vec!["C:\\dev\\a.log".into(), "C:\\dev\\b.log".into()],
+            ..Default::default()
+        };
+        let prompt = build("which of these is newer?", &context);
+        assert!(prompt.contains(
+            "- Shells open in this terminal: PowerShell 7, WSL; running under them: cargo.exe.\n"
+        ));
+        assert!(prompt.contains("<files>\nC:\\dev\\a.log\nC:\\dev\\b.log\n</files>"));
     }
 
     #[test]

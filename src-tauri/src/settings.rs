@@ -1183,7 +1183,8 @@ pub fn get_default_settings() -> AppSettings {
         ShortcutBinding {
             id: "ask_grab".to_string(),
             name: "Grab for Ask".to_string(),
-            description: "Pick part of the screen to mark up and send with the question.".to_string(),
+            description: "Pick part of the screen to mark up and send with the question."
+                .to_string(),
             default_binding: grab_shortcut.to_string(),
             current_binding: grab_shortcut.to_string(),
         },

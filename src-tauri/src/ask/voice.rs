@@ -19,7 +19,7 @@ use tauri_specta::Event as _;
 use super::agents::{self, Agent};
 use super::capture::{Capture, CaptureKind, CaptureView};
 use super::ocr;
-use super::prompt::{Picture, ScreenContext};
+use super::prompt::{Picture, ScreenContext, WindowText};
 use super::store::Via;
 use super::timeline::{Event, Spoken, Timeline, What};
 use super::watch::{Watch, Watched};
@@ -31,7 +31,8 @@ use crate::speech::selection::CopyKeys;
 
 struct Pending {
     window: Option<WindowInfo>,
-    screenshot: Option<JoinHandle<Option<PathBuf>>>,
+    /// The window's screenshot and the words on it.
+    screenshot: Option<JoinHandle<Option<(PathBuf, ocr::Page)>>>,
     /// Where that window was as its screenshot was taken.
     rect: Option<[i32; 4]>,
     /// The Claude Code session running in that window, looked up meanwhile.
@@ -81,7 +82,12 @@ pub fn pressed(app: &AppHandle) {
     let settings = crate::settings::get_settings(app).ask;
     let screenshot = window.as_ref().filter(|_| settings.screenshot).map(|w| {
         let handle = w.handle;
-        std::thread::spawn(move || super::screenshot::capture(handle))
+        // Read while the question is still being asked.
+        std::thread::spawn(move || {
+            let path = super::screenshot::capture(handle)?;
+            let page = ocr::read_png(&path);
+            Some((path, page))
+        })
     });
     let rect = window.as_ref().and_then(|w| window::rect(w.handle));
     let agent = window.clone().filter(|_| settings.use_agents).map(|w| {
@@ -136,7 +142,7 @@ fn show(app: &AppHandle, pending: Option<&Pending>) {
 fn discard(pending: Pending) {
     if let Some(handle) = pending.screenshot {
         std::thread::spawn(move || {
-            if let Ok(Some(path)) = handle.join() {
+            if let Ok(Some((path, _))) = handle.join() {
                 let _ = std::fs::remove_file(path);
             }
         });
@@ -346,14 +352,17 @@ pub fn released(app: &AppHandle, text: String, audio: Option<AskAudio>) {
                 Vec::new(),
             ),
         };
-        // Pictures picked by hand say more than the window's own screenshot.
-        let screenshot = screenshot.filter(|path| {
-            let keep = captures.is_empty();
-            if !keep {
-                let _ = std::fs::remove_file(path);
-            }
-            keep
-        });
+        // Pictures picked by hand say more than the window's own screenshot,
+        // or the words read off it.
+        let (screenshot, screen) = screenshot
+            .filter(|(path, _)| {
+                let keep = captures.is_empty();
+                if !keep {
+                    let _ = std::fs::remove_file(path);
+                }
+                keep
+            })
+            .unzip();
         // What each mark encloses, read off its picture, all at once.
         let reads: Vec<_> = captures
             .iter()
@@ -399,7 +408,7 @@ pub fn released(app: &AppHandle, text: String, audio: Option<AskAudio>) {
         // What the mouse was on at each "this", read off the window's
         // screenshot. Timing the words costs a pass of the model, so only
         // when a "this" was said or there is something to tie them to.
-        let pointing = screenshot
+        let pointing = screen
             .as_ref()
             .zip(rect)
             .filter(|_| !watched.pointer.is_empty())
@@ -409,10 +418,25 @@ pub fn released(app: &AppHandle, text: String, audio: Option<AskAudio>) {
         } else {
             Vec::new()
         };
-        if let Some((path, rect)) = pointing {
-            let pointed = ocr::pointed(&words, &watched.pointer, rect, path);
+        if let Some((page, rect)) = pointing {
+            let pointed = ocr::pointed(&words, &watched.pointer, rect, page);
             watched.events.extend(pointed);
         }
+        // What the window shows: as the app gives it, else read off it.
+        let window_text = watched
+            .text_at_press
+            .take()
+            .map(|text| WindowText {
+                text,
+                from_app: true,
+            })
+            .or_else(|| {
+                let text = screen.as_ref()?.text();
+                (!text.trim().is_empty()).then_some(WindowText {
+                    text,
+                    from_app: false,
+                })
+            });
         watched.events.sort_by_key(|e| e.at);
         let timeline = (!watched.events.is_empty()).then_some(Timeline {
             words,
@@ -456,6 +480,7 @@ pub fn released(app: &AppHandle, text: String, audio: Option<AskAudio>) {
                     .map(|w| w.title.clone())
                     .filter(|t| !t.trim().is_empty()),
                 selection: selection.filter(|s| !s.trim().is_empty()),
+                window_text,
                 input: None,
                 recent_reads,
                 screenshot,

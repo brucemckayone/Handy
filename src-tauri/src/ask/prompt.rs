@@ -12,6 +12,10 @@ use super::timeline::{self, Timeline, What};
 const MAX_SELECTION: usize = 20_000;
 /// Read-aloud text past this many characters is cut.
 const MAX_READ: usize = 4_000;
+/// The window's text past this many characters is cut: from the top for
+/// what the app gives (a terminal's latest lines are at the bottom), from
+/// the bottom for what is read off the screen.
+const MAX_WINDOW_TEXT: usize = 6_000;
 
 const STYLE: &str = "\
 You are answering out loud through Handy, a voice assistant on the user's computer. \
@@ -32,6 +36,14 @@ pub struct Picture {
     pub path: PathBuf,
 }
 
+/// The text showing in the window, so Claude can quote it exactly.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WindowText {
+    pub text: String,
+    /// Given by the app itself; otherwise read off the screenshot.
+    pub from_app: bool,
+}
+
 /// What was on screen when the question was asked.
 #[derive(Debug, Clone, Default)]
 pub struct ScreenContext {
@@ -39,6 +51,7 @@ pub struct ScreenContext {
     pub app: Option<String>,
     pub window_title: Option<String>,
     pub selection: Option<String>,
+    pub window_text: Option<WindowText>,
     /// Text read aloud in that window shortly before, with minutes ago.
     pub recent_reads: Vec<(String, u64)>,
     pub screenshot: Option<PathBuf>,
@@ -55,6 +68,7 @@ impl ScreenContext {
         self.app.is_none()
             && self.window_title.is_none()
             && self.selection.is_none()
+            && self.window_text.is_none()
             && self.recent_reads.is_empty()
             && self.screenshot.is_none()
             && self.pictures.is_empty()
@@ -74,6 +88,16 @@ fn clip(text: &str, max: usize) -> String {
     }
     let cut: String = text.chars().take(max).collect();
     format!("{cut}\n[…cut]")
+}
+
+/// The last `max` characters of `text`.
+fn clip_start(text: &str, max: usize) -> String {
+    let count = text.chars().count();
+    if count <= max {
+        return text.to_string();
+    }
+    let kept: String = text.chars().skip(count - max).collect();
+    format!("[…cut]\n{kept}")
 }
 
 pub fn build(question: &str, context: &ScreenContext) -> String {
@@ -99,6 +123,23 @@ pub fn build(question: &str, context: &ScreenContext) -> String {
                 "- Selected text:\n<selection>\n{}\n</selection>\n",
                 clip(selection.trim(), MAX_SELECTION)
             ));
+        }
+        match &context.window_text {
+            Some(WindowText {
+                text,
+                from_app: true,
+            }) => out.push_str(&format!(
+                "- Text showing in the window, as the app gives it:\n<window-text>\n{}\n</window-text>\n",
+                clip_start(text.trim(), MAX_WINDOW_TEXT)
+            )),
+            Some(WindowText {
+                text,
+                from_app: false,
+            }) => out.push_str(&format!(
+                "- Text showing in the window, read off the screenshot (may have small misreadings):\n<window-text>\n{}\n</window-text>\n",
+                clip(text.trim(), MAX_WINDOW_TEXT)
+            )),
+            None => {}
         }
         for (text, minutes) in &context.recent_reads {
             let ago = match minutes {
@@ -190,6 +231,7 @@ mod tests {
             app: Some("Code.exe".into()),
             window_title: Some("actions.rs - Handy".into()),
             selection: Some("fn main() {}".into()),
+            window_text: None,
             recent_reads: vec![("Some notes".into(), 2)],
             screenshot: Some(PathBuf::from("C:/t/shot.png")),
             pictures: Vec::new(),
@@ -280,6 +322,28 @@ mod tests {
             "- Pictures they took while asking are attached, in this order: Grab 1 (Grafana), Snap 2 (Terminal).\n"
         ));
         assert!(!prompt.contains("C:/t/"), "the pictures go in the message");
+    }
+
+    #[test]
+    fn window_text_says_where_it_came_from_and_keeps_a_terminals_end() {
+        let from_app = ScreenContext {
+            window_text: Some(WindowText {
+                text: format!("{}\nPS C:\\> cargo test", "x".repeat(MAX_WINDOW_TEXT)),
+                from_app: true,
+            }),
+            ..Default::default()
+        };
+        let prompt = build("why did this fail?", &from_app);
+        assert!(prompt.contains("as the app gives it:\n<window-text>\n[…cut]\n"));
+        assert!(prompt.contains("PS C:\\> cargo test\n</window-text>"));
+        let read = ScreenContext {
+            window_text: Some(WindowText {
+                text: "Run tests  Cancel".into(),
+                from_app: false,
+            }),
+            ..Default::default()
+        };
+        assert!(build("?", &read).contains("read off the screenshot"));
     }
 
     #[test]

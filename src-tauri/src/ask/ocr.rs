@@ -46,6 +46,22 @@ impl Page {
         (x * self.width / 100.0, y * self.height / 100.0)
     }
 
+    /// The words line by line, as text.
+    pub fn text(&self) -> String {
+        let mut out = String::new();
+        let mut line = None;
+        for word in &self.words {
+            match line {
+                Some(n) if n == word.line => out.push(' '),
+                Some(_) => out.push('\n'),
+                None => {}
+            }
+            out.push_str(&word.text);
+            line = Some(word.line);
+        }
+        out
+    }
+
     /// `percent` of the picture's longer side, in pixels.
     fn reach(&self, percent: f32) -> f32 {
         self.width.max(self.height) * percent / 100.0
@@ -183,26 +199,21 @@ fn targets(said: &[Spoken], pointer: &[(u64, i32, i32)], rect: [i32; 4]) -> Vec<
         .collect()
 }
 
-/// What the mouse was on at each "this" said, read off the screenshot of
-/// the window at `rect` taken as the key went down.
+/// What the mouse was on at each "this" said, from `page`, the words on
+/// the screenshot of the window at `rect` taken as the key went down.
 pub fn pointed(
     said: &[Spoken],
     pointer: &[(u64, i32, i32)],
     rect: [i32; 4],
-    screenshot: &Path,
+    page: &Page,
 ) -> Vec<Event> {
-    let targets = targets(said, pointer, rect);
-    if targets.is_empty() {
-        return Vec::new();
-    }
-    let page = read_png(screenshot);
-    targets
+    targets(said, pointer, rect)
         .into_iter()
         .filter_map(|(at, x, y)| {
             Some(Event {
                 at,
                 what: What::Pointed {
-                    label: under(&page, x, y)?,
+                    label: under(page, x, y)?,
                 },
             })
         })
@@ -432,6 +443,12 @@ mod tests {
             [(1_300, 20.0, 40.0)]
         );
         assert!(targets(&words, &pointer, [0, 0, 0, 0]).is_empty());
+    }
+
+    #[test]
+    fn a_page_reads_line_by_line() {
+        assert_eq!(toolbar().text(), "File Edit\nRun tests Cancel");
+        assert_eq!(Page::default().text(), "");
     }
 
     #[test]

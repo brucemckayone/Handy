@@ -1,11 +1,14 @@
-//! What's selected in the app in front, read through UI Automation: no keys
-//! pressed and nothing put on the clipboard. Apps built on Chromium (VS Code,
+//! What's selected in the app in front, and the text it shows, read through
+//! UI Automation: no keys pressed and nothing put on the clipboard. Apps built on Chromium (VS Code,
 //! Teams, the new Outlook, Edge) are left alone: asking them anything turns
 //! on their accessibility mode, and VS Code then offers screen-reader mode.
 
 /// Selections past this many characters are cut.
 #[cfg(windows)]
 const MAX_SELECTION: i32 = 20_000;
+/// A control's showing text past this many characters is cut.
+#[cfg(windows)]
+const MAX_VISIBLE: i32 = 20_000;
 
 /// Programs built on Chromium or Electron, by name without `.exe`.
 const CHROMIUM: &[&str] = &[
@@ -75,6 +78,29 @@ impl Uia {
             Some(text)
         }
     }
+
+    /// The text showing in the focused control: a terminal's screen, a
+    /// document's page. `None` when the control can't say; never a
+    /// password box's.
+    pub fn visible_text(&self) -> Option<String> {
+        use windows::Win32::UI::Accessibility::{IUIAutomationTextPattern, UIA_TextPatternId};
+        // SAFETY: COM calls on live objects, from the thread that made them.
+        unsafe {
+            let focused = self.0.GetFocusedElement().ok()?;
+            if focused.CurrentIsPassword().map_or(true, |p| p.as_bool()) {
+                return None;
+            }
+            let pattern: IUIAutomationTextPattern =
+                focused.GetCurrentPatternAs(UIA_TextPatternId).ok()?;
+            let ranges = pattern.GetVisibleRanges().ok()?;
+            let mut parts = Vec::new();
+            for i in 0..ranges.Length().ok()? {
+                let range = ranges.GetElement(i).ok()?;
+                parts.push(range.GetText(MAX_VISIBLE).ok()?.to_string());
+            }
+            Some(parts.join("\n"))
+        }
+    }
 }
 
 #[cfg(not(windows))]
@@ -87,6 +113,10 @@ impl Uia {
     }
 
     pub fn selection(&self) -> Option<String> {
+        None
+    }
+
+    pub fn visible_text(&self) -> Option<String> {
         None
     }
 }

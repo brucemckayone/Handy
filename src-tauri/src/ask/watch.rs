@@ -20,6 +20,9 @@ const SETTLED: Duration = Duration::from_millis(300);
 /// An Ask nobody ends stops being watched after this.
 const LONGEST: Duration = Duration::from_secs(5 * 60);
 const MAX_EVENTS: usize = 40;
+/// A focused control showing fewer lines than this is a box, not the
+/// window's text: a search field, a single line.
+const ENOUGH_LINES: usize = 3;
 /// Where the mouse was, for as long as an Ask is watched.
 const MAX_POINTER: usize = (LONGEST.as_millis() / EVERY.as_millis()) as usize;
 
@@ -29,6 +32,9 @@ pub struct Watched {
     /// What was selected as the key went down: empty when nothing was,
     /// `None` when the app can't say (then it is copied the old way).
     pub at_press: Option<String>,
+    /// The text the app in front was showing as the key went down, where
+    /// it can say: a terminal's screen.
+    pub text_at_press: Option<String>,
     pub events: Vec<Event>,
     /// Where the mouse was, in screen pixels, on the question's clock.
     pub pointer: Vec<(u64, i32, i32)>,
@@ -79,6 +85,15 @@ fn read(uia: &Option<Uia>, w: &WindowInfo) -> Option<String> {
     uia.as_ref()?.selection()
 }
 
+fn showing(uia: &Option<Uia>, w: &WindowInfo) -> Option<String> {
+    if uia::is_chromium(w.app()) {
+        return None;
+    }
+    let text = uia.as_ref()?.visible_text()?;
+    let lines = text.lines().filter(|l| !l.trim().is_empty()).count();
+    (lines >= ENOUGH_LINES).then_some(text)
+}
+
 fn ms_since(started: Instant, at: Instant) -> u64 {
     at.saturating_duration_since(started).as_millis() as u64
 }
@@ -89,6 +104,7 @@ fn watch(started: Instant, mut front: Option<WindowInfo>, stop: &AtomicBool) -> 
     let at_press = front.as_ref().and_then(|w| read(&uia, w));
     let mut watched = Watched {
         at_press: at_press.clone(),
+        text_at_press: front.as_ref().and_then(|w| showing(&uia, w)),
         events: Vec::new(),
         pointer: Vec::new(),
     };

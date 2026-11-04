@@ -1335,7 +1335,52 @@
       "region": "Part of the screen",
       "keyEsc": "Esc",
       "keyEnter": "Enter",
-      "keyCtrlEnter": "Ctrl+Enter"
+      "keyCtrlEnter": "Ctrl+Enter",
+      "marksHint": "Each mark gets the next number and the moment you drew it",
+      "withKey": "{{name}} ({{key}})",
+      "tools": {
+        "arrow": "Arrow",
+        "box": "Box",
+        "highlight": "Highlight",
+        "pen": "Pen",
+        "text": "Text",
+        "pin": "Pin"
+      },
+      "colors": {
+        "pink": "Pink",
+        "amber": "Amber",
+        "blue": "Blue"
+      },
+      "undo": "Undo (Ctrl+Z)",
+      "allKeys": "All shortcuts (?)",
+      "labelPlaceholder": "Label, then Enter",
+      "keys": {
+        "title": "Shortcuts",
+        "hideBefore": "Press",
+        "hideAfter": "to hide",
+        "ctrl": "Ctrl",
+        "drag": "Drag",
+        "click": "Click",
+        "delete": "Delete",
+        "whileAsking": "While asking",
+        "grab": "Grab part of the screen",
+        "snap": "Snap the window under the mouse",
+        "send": "Tap to send, once hands-free",
+        "cancel": "Cancel the whole question",
+        "picking": "Picking what to grab",
+        "region": "A region",
+        "window": "A whole window",
+        "screen": "The whole screen",
+        "marking": "Marking up",
+        "tools": "Arrow, box, highlight, pen, text, pin",
+        "colors": "Pink, amber, blue",
+        "undo": "Undo (Ctrl+Y redoes)",
+        "remove": "Remove the mark you clicked",
+        "finishing": "Finishing the grab",
+        "add": "Add it and keep talking",
+        "addAndAsk": "Add it and ask now",
+        "drop": "Drop it"
+      }
     },
     "panel": {
       "switchThread": "Switch thread",

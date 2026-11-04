@@ -7,7 +7,8 @@ use specta::Type;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 
-use super::{screenshot, voice, window};
+use super::timeline::What;
+use super::{grab, screenshot, voice, window};
 use crate::TranscriptionCoordinator;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -30,6 +31,8 @@ pub struct Capture {
     pub thumbnail: String,
     /// When it was taken, on the Ask clock.
     pub at: u64,
+    /// Marks drawn on it, each with how long before it was added.
+    pub marks: Vec<(u64, What)>,
 }
 
 impl Capture {
@@ -85,7 +88,10 @@ fn take(app: &AppHandle, kind: CaptureKind) {
             let app = app.clone();
             std::thread::spawn(move || snap(&app));
         }
-        CaptureKind::Grab => log::debug!("Ask: grab key pressed; nothing to grab with yet"),
+        CaptureKind::Grab => {
+            let app = app.clone();
+            std::thread::spawn(move || grab::open(&app));
+        }
     }
 }
 
@@ -112,6 +118,7 @@ fn snap(app: &AppHandle) {
             path,
             thumbnail,
             at: 0,
+            marks: Vec::new(),
         },
     );
 }

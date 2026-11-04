@@ -55,6 +55,27 @@ pub fn send_ask(app: AppHandle) {
     }
 }
 
+/// What the grab overlay shows, for a page that loads late.
+#[tauri::command]
+#[specta::specta]
+pub fn get_ask_grab() -> Option<super::grab::GrabFrame> {
+    super::grab::frame()
+}
+
+/// The grab overlay is done: its marked-up picture joins the question.
+#[tauri::command]
+#[specta::specta]
+pub fn finish_ask_grab(app: AppHandle, result: super::grab::GrabResult) -> Result<(), String> {
+    super::grab::finish(&app, result)
+}
+
+/// The grab was dropped: back to talking.
+#[tauri::command]
+#[specta::specta]
+pub fn close_ask_grab(app: AppHandle) {
+    super::grab::close(&app);
+}
+
 /// Recent threads, newest first.
 #[tauri::command]
 #[specta::specta]

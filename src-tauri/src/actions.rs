@@ -989,6 +989,11 @@ struct CancelAction;
 
 impl ShortcutAction for CancelAction {
     fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        // The grab overlay's own Esc, caught here before it could see it.
+        if crate::ask::grab::is_open() {
+            crate::ask::grab::escape(app);
+            return;
+        }
         // An Ask with grabs or snaps takes a second Esc.
         if crate::ask::voice::cancel_pressed(app) {
             utils::cancel_current_operation(app);

@@ -66,6 +66,19 @@ pub fn set_ask_mode(on: bool) {
     ASK_MODE.store(on, Ordering::Relaxed);
 }
 
+/// Puts the recording overlay back on top if it is showing: the grab
+/// overlay, opened over the whole screen, would otherwise hide the pill.
+pub fn raise_recording_overlay(app_handle: &AppHandle) {
+    #[cfg(target_os = "windows")]
+    if let Some(window) = app_handle.get_webview_window("recording_overlay") {
+        if window.is_visible().unwrap_or(false) {
+            force_overlay_topmost(&window);
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    let _ = app_handle;
+}
+
 /// Overlay window size (logical) for a given UI state.
 fn overlay_dimensions(state: &str) -> (f64, f64) {
     let (width, height) = if state == "streaming" {

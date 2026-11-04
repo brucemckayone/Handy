@@ -64,6 +64,14 @@ pub fn under_mouse() -> Option<WindowInfo> {
     info(hwnd).filter(|w| w.pid != std::process::id())
 }
 
+/// The window with handle `handle`.
+#[cfg(windows)]
+pub fn info_of(handle: isize) -> Option<WindowInfo> {
+    info(windows::Win32::Foundation::HWND(
+        handle as *mut core::ffi::c_void,
+    ))
+}
+
 #[cfg(windows)]
 fn info(hwnd: windows::Win32::Foundation::HWND) -> Option<WindowInfo> {
     use windows::Win32::UI::WindowsAndMessaging::{GetWindowTextW, GetWindowThreadProcessId};
@@ -93,6 +101,11 @@ pub fn foreground() -> Option<WindowInfo> {
 
 #[cfg(not(windows))]
 pub fn under_mouse() -> Option<WindowInfo> {
+    None
+}
+
+#[cfg(not(windows))]
+pub fn info_of(_handle: isize) -> Option<WindowInfo> {
     None
 }
 

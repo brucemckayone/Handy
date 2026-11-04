@@ -12,6 +12,7 @@ pub mod claude;
 pub mod cli;
 pub mod commands;
 pub mod expiry;
+pub mod grab;
 pub mod panel;
 pub mod prompt;
 pub mod recent;

@@ -423,6 +423,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
 
     // The Ask panel, hidden until opened.
     ask::panel::create(app_handle);
+    ask::grab::create(app_handle);
 
     // The meeting pill and call prompt windows, and the call watcher.
     meeting::widgets::create(app_handle);
@@ -909,6 +910,9 @@ pub fn run(mut cli_args: CliArgs) {
             ask::commands::set_ask_panel_thread,
             ask::commands::get_ask_pill_state,
             ask::commands::send_ask,
+            ask::commands::get_ask_grab,
+            ask::commands::finish_ask_grab,
+            ask::commands::close_ask_grab,
             ask::commands::list_ask_threads,
             ask::commands::get_ask_thread,
             ask::commands::ask_typed,
@@ -944,6 +948,8 @@ pub fn run(mut cli_args: CliArgs) {
             ask::AskBusyEvent,
             ask::panel::AskOpenEvent,
             ask::voice::AskLiveEvent,
+            ask::grab::AskGrabEvent,
+            ask::grab::AskGrabEscapeEvent,
         ]);
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds

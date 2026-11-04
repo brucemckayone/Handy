@@ -1280,6 +1280,29 @@ async sendAsk() : Promise<void> {
     await TAURI_INVOKE("send_ask");
 },
 /**
+ * What the grab overlay shows, for a page that loads late.
+ */
+async getAskGrab() : Promise<GrabFrame | null> {
+    return await TAURI_INVOKE("get_ask_grab");
+},
+/**
+ * The grab overlay is done: its marked-up picture joins the question.
+ */
+async finishAskGrab(result: GrabResult) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("finish_ask_grab", { result }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The grab was dropped: back to talking.
+ */
+async closeAskGrab() : Promise<void> {
+    await TAURI_INVOKE("close_ask_grab");
+},
+/**
  * Recent threads, newest first.
  */
 async listAskThreads() : Promise<Result<ThreadListItem[], string>> {
@@ -1411,6 +1434,8 @@ export const events = __makeEvents__<{
 askBusyEvent: AskBusyEvent,
 askDeletedEvent: AskDeletedEvent,
 askDeltaEvent: AskDeltaEvent,
+askGrabEscapeEvent: AskGrabEscapeEvent,
+askGrabEvent: AskGrabEvent,
 askLiveEvent: AskLiveEvent,
 askOpenEvent: AskOpenEvent,
 askThreadEvent: AskThreadEvent,
@@ -1433,6 +1458,8 @@ transcriptionJob: TranscriptionJob
 askBusyEvent: "ask-busy-event",
 askDeletedEvent: "ask-deleted-event",
 askDeltaEvent: "ask-delta-event",
+askGrabEscapeEvent: "ask-grab-escape-event",
+askGrabEvent: "ask-grab-event",
 askLiveEvent: "ask-live-event",
 askOpenEvent: "ask-open-event",
 askThreadEvent: "ask-thread-event",
@@ -1597,6 +1624,12 @@ export type AskDeletedEvent = { thread_id: string }
  */
 export type AskDeltaEvent = { thread_id: string; answer_id: string; reset: boolean; text: string }
 /**
+ * Esc reached Handy's cancel shortcut instead of the overlay, which
+ * treats it as its own.
+ */
+export type AskGrabEscapeEvent = Record<string, never>
+export type AskGrabEvent = { frame: GrabFrame | null }
+/**
  * What the recording pill shows of the question being asked.
  */
 export type AskLiveEvent = { 
@@ -1748,6 +1781,67 @@ export type DictationSpan = { start_ms: number; end_ms: number;
 text: string | null }
 export type Exchange = { question: Question; answer: Answer }
 export type GpuDeviceOption = { id: string; name: string; total_vram_mb: number }
+/**
+ * What the grab overlay shows; `None` once it closes.
+ */
+export type GrabFrame = { 
+/**
+ * The frozen screen, a BMP file for `convertFileSrc`.
+ */
+path: string; width: number; height: number; windows: GrabWindow[]; 
+/**
+ * The number the next mark gets: marks count on across the question.
+ */
+first_mark: number; 
+/**
+ * The window under the mouse, for a region that isn't a window.
+ */
+under_mouse: string }
+/**
+ * A mark as drawn in the overlay.
+ */
+export type GrabMark = { n: number; kind: GrabMarkKind; 
+/**
+ * How long before the grab was added it was drawn.
+ */
+ago_ms: number; 
+/**
+ * Where on the grab, in percent of its width and height.
+ */
+x0: number; x1: number; y0: number; y1: number; 
+/**
+ * An arrow's ends, when they start and finish on other marks.
+ */
+joins: [number, number] | null; 
+/**
+ * What a text mark says.
+ */
+label: string | null }
+export type GrabMarkKind = "arrow" | "box" | "highlight" | "pen" | "text" | "pin"
+/**
+ * The marked-up grab, as the overlay hands it back.
+ */
+export type GrabResult = { 
+/**
+ * The picture with its marks drawn in, as base64 PNG.
+ */
+png: string; 
+/**
+ * A small copy as a data URL, for the pill.
+ */
+thumbnail: string; 
+/**
+ * The window it shows.
+ */
+of: string; marks: GrabMark[]; 
+/**
+ * Ctrl+Enter: add it and ask now.
+ */
+ask_now: boolean }
+/**
+ * A window on the frozen screen, in its pixels, frontmost first.
+ */
+export type GrabWindow = { x: number; y: number; width: number; height: number; label: string }
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean; 
 /**
  * The name of the file this entry was transcribed from; `None` for a

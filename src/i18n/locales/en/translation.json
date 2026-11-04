@@ -1324,6 +1324,19 @@
       "grabN": "Grab {{n}}: {{of}}",
       "snapN": "Snap {{n}}: {{of}}"
     },
+    "grab": {
+      "pickHint": "Drag a region · Click a window · F whole screen · Esc back",
+      "stillListening": "Still listening: you can let go of the keys",
+      "size": "{{width}} × {{height}}",
+      "drop": "Drop",
+      "add": "Add",
+      "addAndAsk": "Add and ask",
+      "wholeScreen": "Whole screen",
+      "region": "Part of the screen",
+      "keyEsc": "Esc",
+      "keyEnter": "Enter",
+      "keyCtrlEnter": "Ctrl+Enter"
+    },
     "panel": {
       "switchThread": "Switch thread",
       "recent": "Recent threads",

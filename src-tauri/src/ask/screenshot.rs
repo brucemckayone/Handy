@@ -105,23 +105,59 @@ fn save(image: &Image) -> Option<PathBuf> {
 #[cfg(windows)]
 fn grab(handle: isize) -> Option<Image> {
     use windows::Win32::Foundation::{HWND, RECT};
+    use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
+
+    let hwnd = HWND(handle as *mut core::ffi::c_void);
+    let mut rect = RECT::default();
+    // SAFETY: a plain query; the rect outlives the call that fills it.
+    unsafe { GetWindowRect(hwnd, &mut rect).ok()? };
+    let bgra = copy_screen(
+        rect.left,
+        rect.top,
+        rect.right - rect.left,
+        rect.bottom - rect.top,
+    )?;
+    let rgb = bgra
+        .pixels
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .flat_map(|&[b, g, r, _]| [r, g, b])
+        .collect();
+    Some(Image {
+        width: bgra.width,
+        height: bgra.height,
+        rgb,
+    })
+}
+
+#[cfg(not(windows))]
+fn grab(_handle: isize) -> Option<Image> {
+    None
+}
+
+/// Screen pixels as GDI gives them: blue, green, red, unused; rows top first.
+pub struct Bgra {
+    pub width: u32,
+    pub height: u32,
+    pub pixels: Vec<u8>,
+}
+
+/// Copies part of the screen, in physical pixels of the virtual desktop.
+#[cfg(windows)]
+pub fn copy_screen(left: i32, top: i32, width: i32, height: i32) -> Option<Bgra> {
     use windows::Win32::Graphics::Gdi::{
         BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC,
         GetDIBits, ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, CAPTUREBLT,
         DIB_RGB_COLORS, SRCCOPY,
     };
-    use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
 
-    let hwnd = HWND(handle as *mut core::ffi::c_void);
-    let mut rect = RECT::default();
+    if width <= 0 || height <= 0 {
+        return None;
+    }
     // SAFETY: every GDI object made here is released before returning; the
     // pixel buffer is sized for the bitmap GetDIBits fills.
     unsafe {
-        GetWindowRect(hwnd, &mut rect).ok()?;
-        let (width, height) = (rect.right - rect.left, rect.bottom - rect.top);
-        if width <= 0 || height <= 0 {
-            return None;
-        }
         let screen = GetDC(None);
         let memory = CreateCompatibleDC(Some(screen));
         let bitmap = CreateCompatibleBitmap(screen, width, height);
@@ -133,8 +169,8 @@ fn grab(handle: isize) -> Option<Image> {
             width,
             height,
             Some(screen),
-            rect.left,
-            rect.top,
+            left,
+            top,
             SRCCOPY | CAPTUREBLT,
         );
         let mut info = BITMAPINFO {
@@ -150,14 +186,14 @@ fn grab(handle: isize) -> Option<Image> {
             },
             ..Default::default()
         };
-        let mut bgra = vec![0u8; (width * height * 4) as usize];
+        let mut pixels = vec![0u8; (width * height * 4) as usize];
         let rows = if copied.is_ok() {
             GetDIBits(
                 memory,
                 bitmap,
                 0,
                 height as u32,
-                Some(bgra.as_mut_ptr().cast()),
+                Some(pixels.as_mut_ptr().cast()),
                 &mut info,
                 DIB_RGB_COLORS,
             )
@@ -168,26 +204,70 @@ fn grab(handle: isize) -> Option<Image> {
         let _ = DeleteObject(bitmap.into());
         let _ = DeleteDC(memory);
         ReleaseDC(None, screen);
-        if rows != height {
-            return None;
-        }
-        let rgb = bgra
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .flat_map(|&[b, g, r, _]| [r, g, b])
-            .collect();
-        Some(Image {
+        (rows == height).then_some(Bgra {
             width: width as u32,
             height: height as u32,
-            rgb,
+            pixels,
         })
     }
 }
 
 #[cfg(not(windows))]
-fn grab(_handle: isize) -> Option<Image> {
+pub fn copy_screen(_left: i32, _top: i32, _width: i32, _height: i32) -> Option<Bgra> {
     None
+}
+
+/// An uncompressed 32-bit BMP, rows top first: written in no time even for
+/// a 4K screen, and any webview shows it. Alpha is set opaque, as GDI
+/// leaves it zero.
+fn bmp(image: &Bgra) -> Vec<u8> {
+    let data = image.pixels.len() as u32;
+    let mut out = Vec::with_capacity(54 + data as usize);
+    out.extend(b"BM");
+    out.extend((54 + data).to_le_bytes());
+    out.extend(0u32.to_le_bytes());
+    out.extend(54u32.to_le_bytes());
+    out.extend(40u32.to_le_bytes());
+    out.extend((image.width as i32).to_le_bytes());
+    out.extend((-(image.height as i32)).to_le_bytes());
+    out.extend(1u16.to_le_bytes());
+    out.extend(32u16.to_le_bytes());
+    out.extend(0u32.to_le_bytes());
+    out.extend(data.to_le_bytes());
+    out.extend(2835i32.to_le_bytes());
+    out.extend(2835i32.to_le_bytes());
+    out.extend(0u32.to_le_bytes());
+    out.extend(0u32.to_le_bytes());
+    for pixel in image.pixels.as_chunks::<4>().0 {
+        out.extend([pixel[0], pixel[1], pixel[2], 255]);
+    }
+    out
+}
+
+/// Saves `image` as a BMP in [`dir`], for the grab overlay to show.
+pub fn save_frame(image: &Bgra) -> Option<PathBuf> {
+    let dir = dir();
+    std::fs::create_dir_all(&dir).ok()?;
+    let path = dir.join(format!("{}.bmp", super::new_uuid()));
+    match std::fs::write(&path, bmp(image)) {
+        Ok(()) => Some(path),
+        Err(e) => {
+            log::warn!("Couldn't save the frozen screen: {e}");
+            None
+        }
+    }
+}
+
+/// Saves a PNG made elsewhere (the grab overlay's marked-up picture) in [`dir`].
+pub fn save_png_bytes(png: &[u8]) -> Option<PathBuf> {
+    if png.get(1..4) != Some(b"PNG") {
+        return None;
+    }
+    let dir = dir();
+    std::fs::create_dir_all(&dir).ok()?;
+    let path = dir.join(format!("{}.png", super::new_uuid()));
+    std::fs::write(&path, png).ok()?;
+    Some(path)
 }
 
 #[cfg(test)]
@@ -225,6 +305,25 @@ mod tests {
             1600,
         );
         assert_eq!(image.width, 3);
+    }
+
+    #[test]
+    fn frames_are_opaque_top_down_bmps() {
+        let frame = bmp(&Bgra {
+            width: 2,
+            height: 1,
+            pixels: vec![1, 2, 3, 0, 4, 5, 6, 0],
+        });
+        assert_eq!(&frame[..2], b"BM");
+        assert_eq!(frame.len(), 54 + 8);
+        assert_eq!(u32::from_le_bytes(frame[2..6].try_into().unwrap()), 62);
+        assert_eq!(i32::from_le_bytes(frame[22..26].try_into().unwrap()), -1);
+        assert_eq!(&frame[54..], [1, 2, 3, 255, 4, 5, 6, 255]);
+    }
+
+    #[test]
+    fn only_pngs_are_saved_as_pngs() {
+        assert!(save_png_bytes(b"not a picture").is_none());
     }
 
     #[test]

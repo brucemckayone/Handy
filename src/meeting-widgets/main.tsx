@@ -13,9 +13,11 @@ import { MeetingPill } from "./MeetingPill";
 import { MeetingPrompt } from "./MeetingPrompt";
 import { SpeechPill } from "./SpeechPill";
 import { AskPanel } from "./AskPanel";
+import { GrabView } from "./GrabView";
 
-// The meeting pill, the call prompt and the speaking pill: small windows
-// from one page, told apart by `?view=`. Like the overlay, each sets its own theme.
+// The meeting pill, the call prompt, the speaking pill, the Ask panel and
+// Ask's grab overlay: windows from one page, told apart by `?view=`. Like
+// the overlay, each sets its own theme.
 applyTheme(getStoredTheme());
 syncThemeFromSettings();
 listen<Theme>("theme-changed", (event) => applyTheme(event.payload));
@@ -30,6 +32,8 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
       <SpeechPill />
     ) : view === "ask" ? (
       <AskPanel />
+    ) : view === "grab" ? (
+      <GrabView />
     ) : (
       <MeetingPill />
     )}

@@ -151,8 +151,24 @@ pub fn add_capture(app: &AppHandle, mut capture: Capture) {
     };
     capture.n = pending.captures.len() as u32 + 1;
     capture.at = pending.started.elapsed().as_millis() as u64;
+    let name = capture.name();
+    for (ago, what) in &mut capture.marks {
+        // From "this long before it was added" to the Ask clock.
+        *ago = capture.at.saturating_sub(*ago);
+        if let What::Mark { on, .. } = what {
+            *on = name.clone();
+        }
+    }
     pending.captures.push(capture);
     show(app, slot.as_ref());
+}
+
+/// How many marks the question has so far, across its grabs.
+pub fn marks_so_far() -> u32 {
+    PENDING.lock().ok().map_or(0, |slot| {
+        slot.as_ref()
+            .map_or(0, |p| p.captures.iter().map(|c| c.marks.len() as u32).sum())
+    })
 }
 
 /// Esc while asking. With nothing taken it cancels at once; with grabs or
@@ -196,6 +212,7 @@ pub fn cancelled(app: &AppHandle) {
         discard(pending);
         show(app, None);
     }
+    super::grab::close(app);
 }
 
 /// The Ask key came up: nothing done from now on is part of the question.
@@ -238,6 +255,7 @@ pub fn released(app: &AppHandle, text: String, audio: Option<AskAudio>) {
     // Copying the selection waits for the shortcut's keys to be let go.
     std::thread::spawn(move || {
         show(&app, None);
+        super::grab::close(&app);
         let (window, screenshot, agent, started, mut watched, captures) = match pending {
             Some(p) => (
                 p.window,
@@ -264,13 +282,21 @@ pub fn released(app: &AppHandle, text: String, audio: Option<AskAudio>) {
             }
             keep
         });
-        watched.events.extend(captures.iter().map(|c| Event {
-            at: c.at,
-            what: What::Capture {
-                name: c.name(),
-                of: c.of.clone(),
-            },
-        }));
+        for capture in &captures {
+            watched.events.push(Event {
+                at: capture.at,
+                what: What::Capture {
+                    name: capture.name(),
+                    of: capture.of.clone(),
+                },
+            });
+            watched
+                .events
+                .extend(capture.marks.iter().map(|(at, what)| Event {
+                    at: *at,
+                    what: what.clone(),
+                }));
+        }
         watched.events.sort_by_key(|e| e.at);
         let pictures = captures
             .into_iter()

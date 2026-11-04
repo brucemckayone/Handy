@@ -373,11 +373,11 @@
           },
           "ask_grab": {
             "name": "Grab",
-            "description": "While asking, pick part of the screen to mark up and send with the question. Pressed on its own, starts a question."
+            "description": "Drag a region or click a window, then mark it up. Works while asking, and starts an Ask when none is running."
           },
           "ask_snap": {
             "name": "Snap",
-            "description": "While asking, sends the window under the mouse with the question. Pressed on its own, starts a question."
+            "description": "Takes the window under the mouse at once, as it is."
           }
         },
         "errors": {
@@ -1502,6 +1502,31 @@
       "screenshotDescription": "Sent with the question to your Claude account, then deleted from this computer.",
       "agents": "Use a running agent's conversation",
       "agentsDescription": "Asking from a terminal or editor where Claude Code is running? Handy answers from a read-only copy of that agent's conversation. The agent isn't interrupted.",
+      "windowText": "Text in the window",
+      "windowTextDescription": "The text showing in the window you asked from, as the app gives it or read off its screenshot on this computer, so Claude can quote it exactly.",
+      "pointer": "What you point at",
+      "pointerDescription": "The words under the mouse each time you say \u201cthis\u201d or \u201chere\u201d, read off the window's screenshot.",
+      "appContext": "Terminal shells and Explorer files",
+      "appContextDescription": "Which shells a terminal has open and what runs in them; the full paths of files selected in File Explorer.",
+      "grabsGroup": "Snaps and grabs",
+      "grabStartsAsk": "Start an Ask from a grab",
+      "grabStartsAskDescription": "With no Ask running, the grab and snap keys start one, and Handy listens hands-free until you send.",
+      "screenshotWithGrabs": "Send the window screenshot too",
+      "screenshotWithGrabsDescription": "Handy's own screenshot of the window you asked from. Left out once you've grabbed or snapped something yourself.",
+      "keepGrabs": "Keep grabs with the thread",
+      "keepGrabsDescription_one": "So the panel can show them and follow-ups can refer back. Deleted with the thread after 1 day without a question.",
+      "keepGrabsDescription_other": "So the panel can show them and follow-ups can refer back. Deleted with the thread after {{count}} days without a question.",
+      "keepGrabsDescriptionForever": "So the panel can show them and follow-ups can refer back. Deleted with the thread.",
+      "grabFrom": "Grab from",
+      "grabFromDescription": "Which screens freeze when you grab.",
+      "grabFromOptions": {
+        "under_mouse": "The screen under the mouse",
+        "every": "Every screen"
+      },
+      "firstTool": "First tool",
+      "firstToolDescription": "What a drag draws before you pick a tool. Change it any time with its key.",
+      "markupKeys": "Mark-up keys",
+      "markupKeysDescription": "The mark-up keys are fixed: A arrow, R box, H highlight, P pen, T text, N pin, 1 to 3 for colour. Every mark gets the next number as you draw it. Press ? on a grab to see them all.",
       "tools": "What Claude can do",
       "toolsDescription": "Read and search files in the matched project folder, and search the web. It can't edit files or run commands.",
       "readOnly": "Read-only",

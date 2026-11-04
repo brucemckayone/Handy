@@ -15,6 +15,7 @@ use tauri_specta::Event;
 use super::capture::{Capture, CaptureKind};
 use super::timeline::{MarkKind, Region, What};
 use super::{screenshot, voice, window};
+use crate::settings::{FirstTool, GrabScreens};
 
 pub const LABEL: &str = "ask_grab";
 
@@ -57,6 +58,8 @@ pub struct GrabFrame {
     pub capture: Option<GrabCapture>,
     /// For a question being typed in the panel: it waits with the draft.
     pub draft: bool,
+    /// The tool a drag draws with until another is picked.
+    pub first_tool: GrabMarkKind,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type, tauri_specta::Event)]
@@ -187,6 +190,47 @@ pub fn frame() -> Option<GrabFrame> {
     OPEN.lock().ok().and_then(|open| open.clone())
 }
 
+impl From<FirstTool> for GrabMarkKind {
+    fn from(tool: FirstTool) -> Self {
+        match tool {
+            FirstTool::Arrow => GrabMarkKind::Arrow,
+            FirstTool::Box => GrabMarkKind::Box,
+            FirstTool::Pin => GrabMarkKind::Pin,
+            FirstTool::Pen => GrabMarkKind::Pen,
+        }
+    }
+}
+
+/// Every screen, as one: where the leftmost and topmost starts, and the
+/// size of all of them together.
+#[cfg(windows)]
+fn every_screen() -> Option<(PhysicalPosition<i32>, PhysicalSize<u32>)> {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN,
+        SM_YVIRTUALSCREEN,
+    };
+    // SAFETY: plain queries.
+    let (x, y, width, height) = unsafe {
+        (
+            GetSystemMetrics(SM_XVIRTUALSCREEN),
+            GetSystemMetrics(SM_YVIRTUALSCREEN),
+            GetSystemMetrics(SM_CXVIRTUALSCREEN),
+            GetSystemMetrics(SM_CYVIRTUALSCREEN),
+        )
+    };
+    (width > 0 && height > 0).then(|| {
+        (
+            PhysicalPosition::new(x, y),
+            PhysicalSize::new(width as u32, height as u32),
+        )
+    })
+}
+
+#[cfg(not(windows))]
+fn every_screen() -> Option<(PhysicalPosition<i32>, PhysicalSize<u32>)> {
+    None
+}
+
 /// The screen under the mouse: where it starts and its size.
 fn screen_under_mouse(app: &AppHandle) -> Option<(PhysicalPosition<i32>, PhysicalSize<u32>)> {
     let monitor = app
@@ -213,7 +257,12 @@ fn open_screen(app: &AppHandle, draft: bool) {
     if is_open() {
         return;
     }
-    let Some((origin, size)) = screen_under_mouse(app) else {
+    let settings = crate::settings::get_settings(app).ask;
+    let screens = match settings.grab_from {
+        GrabScreens::Every => every_screen(),
+        GrabScreens::UnderMouse => None,
+    };
+    let Some((origin, size)) = screens.or_else(|| screen_under_mouse(app)) else {
         warn!("Ask: no screen to grab");
         return;
     };
@@ -240,6 +289,7 @@ fn open_screen(app: &AppHandle, draft: bool) {
         under_mouse,
         capture: None,
         draft,
+        first_tool: settings.first_tool.into(),
     };
     present(app, frame, origin, size);
 }
@@ -274,6 +324,7 @@ pub fn open_capture(app: &AppHandle, n: u32) {
             height,
         }),
         draft: false,
+        first_tool: crate::settings::get_settings(app).ask.first_tool.into(),
     };
     present(app, frame, origin, size);
 }

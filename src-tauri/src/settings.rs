@@ -452,6 +452,25 @@ pub struct AskSettings {
     /// Threads without a question for this many days are deleted; 0 keeps
     /// them.
     pub keep_days: u32,
+    /// With no Ask running, the grab and snap keys start one, hands-free.
+    pub grab_starts_ask: bool,
+    /// Send the window's own screenshot even when something was grabbed or
+    /// snapped by hand.
+    pub screenshot_with_grabs: bool,
+    /// Keep grabs and snaps with their thread, for the panel and follow-ups.
+    pub keep_grabs: bool,
+    /// Which screens freeze for a grab.
+    pub grab_from: GrabScreens,
+    /// What a drag draws on a grab before another tool is picked.
+    pub first_tool: FirstTool,
+    /// Send the text showing in the window: as the app gives it, or read
+    /// off its screenshot.
+    pub window_text: bool,
+    /// Note the words under the mouse at each "this" or "here".
+    pub pointer: bool,
+    /// Name a terminal's shells and what runs in them, and the files
+    /// selected in File Explorer.
+    pub app_context: bool,
 }
 
 impl Default for AskSettings {
@@ -464,8 +483,38 @@ impl Default for AskSettings {
             use_agents: true,
             same_window_minutes: 60,
             keep_days: 7,
+            grab_starts_ask: true,
+            screenshot_with_grabs: false,
+            keep_grabs: true,
+            grab_from: GrabScreens::UnderMouse,
+            first_tool: FirstTool::Arrow,
+            window_text: true,
+            pointer: true,
+            app_context: true,
         }
     }
+}
+
+/// Which screens freeze for a grab.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum GrabScreens {
+    /// The one the mouse is on.
+    #[default]
+    UnderMouse,
+    /// All of them, as one picture.
+    Every,
+}
+
+/// The mark-up tool a grab opens with.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum FirstTool {
+    #[default]
+    Arrow,
+    Box,
+    Pin,
+    Pen,
 }
 
 /// When Handy's spoken-language detector picks the language for Auto.

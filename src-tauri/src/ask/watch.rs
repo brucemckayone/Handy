@@ -46,6 +46,16 @@ pub struct Watched {
     pub pointer: Vec<(u64, i32, i32)>,
 }
 
+/// What, beyond selections and window switches, the settings let the watch
+/// read as the key goes down.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Reads {
+    /// The text showing in the window.
+    pub window_text: bool,
+    /// A terminal's shells, Explorer's selected files.
+    pub app_context: bool,
+}
+
 pub struct Watch {
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<Watched>>,
@@ -53,12 +63,12 @@ pub struct Watch {
 
 impl Watch {
     /// Watches from `started` (the key press), with `front` in front.
-    pub fn start(started: Instant, front: Option<WindowInfo>) -> Watch {
+    pub fn start(started: Instant, front: Option<WindowInfo>, reads: Reads) -> Watch {
         let stop = Arc::new(AtomicBool::new(false));
         let flag = Arc::clone(&stop);
         let thread = std::thread::Builder::new()
             .name("ask-watch".into())
-            .spawn(move || watch(started, front, &flag))
+            .spawn(move || watch(started, front, reads, &flag))
             .ok();
         Watch { stop, thread }
     }
@@ -104,20 +114,29 @@ fn ms_since(started: Instant, at: Instant) -> u64 {
     at.saturating_duration_since(started).as_millis() as u64
 }
 
-fn watch(started: Instant, mut front: Option<WindowInfo>, stop: &AtomicBool) -> Watched {
+fn watch(
+    started: Instant,
+    mut front: Option<WindowInfo>,
+    reads: Reads,
+    stop: &AtomicBool,
+) -> Watched {
     let uia = Uia::new();
     let own = std::process::id();
     let at_press = front.as_ref().and_then(|w| read(&uia, w));
     let mut watched = Watched {
         at_press: at_press.clone(),
-        text_at_press: front.as_ref().and_then(|w| showing(&uia, w)),
+        text_at_press: front
+            .as_ref()
+            .filter(|_| reads.window_text)
+            .and_then(|w| showing(&uia, w)),
         terminal: front
             .as_ref()
-            .filter(|w| agents::is_terminal(&w.exe))
+            .filter(|w| reads.app_context && agents::is_terminal(&w.exe))
             .and_then(|w| context::terminal(w, &agents::processes())),
         // Shell COM, in the apartment UI Automation set up.
         files: front
             .as_ref()
+            .filter(|_| reads.app_context)
             .map(context::explorer_selection)
             .unwrap_or_default(),
         events: Vec::new(),

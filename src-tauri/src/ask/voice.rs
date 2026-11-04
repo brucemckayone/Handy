@@ -22,7 +22,7 @@ use super::ocr;
 use super::prompt::{ScreenContext, WindowText};
 use super::store::Via;
 use super::timeline::{Event, Spoken, Timeline, What};
-use super::watch::{Watch, Watched};
+use super::watch::{Reads, Watch, Watched};
 use super::window::{self, WindowInfo};
 use super::NewQuestion;
 use crate::audio_toolkit::AudioTiming;
@@ -82,10 +82,16 @@ pub fn pressed(app: &AppHandle) {
     let settings = crate::settings::get_settings(app).ask;
     let screenshot = window.as_ref().filter(|_| settings.screenshot).map(|w| {
         let handle = w.handle;
-        // Read while the question is still being asked.
+        // Read while the question is still being asked, if anything wants
+        // the words.
+        let read = settings.window_text || settings.pointer;
         std::thread::spawn(move || {
             let path = super::screenshot::capture(handle)?;
-            let page = ocr::read_png(&path);
+            let page = if read {
+                ocr::read_png(&path)
+            } else {
+                ocr::Page::default()
+            };
             Some((path, page))
         })
     });
@@ -96,7 +102,11 @@ pub fn pressed(app: &AppHandle) {
             agents::pick(&agents, &agents::parents(), &w).cloned()
         })
     });
-    let watch = cfg!(windows).then(|| Watch::start(started, window.clone()));
+    let reads = Reads {
+        window_text: settings.window_text,
+        app_context: settings.app_context,
+    };
+    let watch = cfg!(windows).then(|| Watch::start(started, window.clone(), reads));
     let bindings = crate::settings::get_settings(app).bindings;
     let key = |id: &str| bindings.get(id).and_then(|b| last_key(&b.current_binding));
     let pending = Pending {
@@ -396,10 +406,11 @@ pub fn released(app: &AppHandle, text: String, audio: Option<AskAudio>) {
             ),
         };
         // Pictures picked by hand say more than the window's own screenshot,
-        // or the words read off it.
+        // or the words read off it, unless the settings want both.
+        let settings = crate::settings::get_settings(&app).ask;
         let (screenshot, screen) = screenshot
             .filter(|(path, _)| {
-                let keep = captures.is_empty();
+                let keep = captures.is_empty() || settings.screenshot_with_grabs;
                 if !keep {
                     let _ = std::fs::remove_file(path);
                 }
@@ -414,7 +425,7 @@ pub fn released(app: &AppHandle, text: String, audio: Option<AskAudio>) {
         let pointing = screen
             .as_ref()
             .zip(rect)
-            .filter(|_| !watched.pointer.is_empty())
+            .filter(|_| settings.pointer && !watched.pointer.is_empty())
             .filter(|_| text.split_whitespace().any(super::timeline::is_deictic));
         let words = if pointing.is_some() || !watched.events.is_empty() {
             audio.map(|a| spoken(&app, a, started)).unwrap_or_default()
@@ -434,7 +445,7 @@ pub fn released(app: &AppHandle, text: String, audio: Option<AskAudio>) {
                 from_app: true,
             })
             .or_else(|| {
-                let text = screen.as_ref()?.text();
+                let text = screen.as_ref().filter(|_| settings.window_text)?.text();
                 (!text.trim().is_empty()).then_some(WindowText {
                     text,
                     from_app: false,

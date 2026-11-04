@@ -1727,7 +1727,42 @@ same_window_minutes: number;
  * Threads without a question for this many days are deleted; 0 keeps
  * them.
  */
-keep_days: number }
+keep_days: number; 
+/**
+ * With no Ask running, the grab and snap keys start one, hands-free.
+ */
+grab_starts_ask: boolean; 
+/**
+ * Send the window's own screenshot even when something was grabbed or
+ * snapped by hand.
+ */
+screenshot_with_grabs: boolean; 
+/**
+ * Keep grabs and snaps with their thread, for the panel and follow-ups.
+ */
+keep_grabs: boolean; 
+/**
+ * Which screens freeze for a grab.
+ */
+grab_from: GrabScreens; 
+/**
+ * What a drag draws on a grab before another tool is picked.
+ */
+first_tool: FirstTool; 
+/**
+ * Send the text showing in the window: as the app gives it, or read
+ * off its screenshot.
+ */
+window_text: boolean; 
+/**
+ * Note the words under the mouse at each "this" or "here".
+ */
+pointer: boolean; 
+/**
+ * Name a terminal's shells and what runs in them, and the files
+ * selected in File Explorer.
+ */
+app_context: boolean }
 /**
  * A thread changed: sent whole.
  */
@@ -1832,6 +1867,10 @@ export type DictationSpan = { start_ms: number; end_ms: number;
  */
 text: string | null }
 export type Exchange = { question: Question; answer: Answer }
+/**
+ * The mark-up tool a grab opens with.
+ */
+export type FirstTool = "arrow" | "box" | "pin" | "pen"
 export type GpuDeviceOption = { id: string; name: string; total_vram_mb: number }
 /**
  * A picture already taken, opened from the pill to mark up again.
@@ -1870,7 +1909,11 @@ under_mouse: string; capture: GrabCapture | null;
 /**
  * For a question being typed in the panel: it waits with the draft.
  */
-draft: boolean }
+draft: boolean; 
+/**
+ * The tool a drag draws with until another is picked.
+ */
+first_tool: GrabMarkKind }
 /**
  * A mark as drawn in the overlay.
  */
@@ -1912,6 +1955,18 @@ of: string; marks: GrabMark[];
  * Ctrl+Enter: add it and ask now.
  */
 ask_now: boolean }
+/**
+ * Which screens freeze for a grab.
+ */
+export type GrabScreens = 
+/**
+ * The one the mouse is on.
+ */
+"under_mouse" | 
+/**
+ * All of them, as one picture.
+ */
+"every"
 /**
  * A window on the frozen screen, in its pixels, frontmost first.
  */

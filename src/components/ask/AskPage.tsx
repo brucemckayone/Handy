@@ -1,7 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ask as confirm } from "@tauri-apps/plugin-dialog";
-import { commands, events, type AskSettings } from "@/bindings";
+import {
+  commands,
+  events,
+  type AskSettings,
+  type FirstTool,
+  type GrabScreens,
+} from "@/bindings";
 import { useSettings } from "@/hooks/useSettings";
 import { Button } from "../ui/Button";
 import { Dropdown } from "../ui/Dropdown";
@@ -14,6 +20,8 @@ import { CopyRow } from "../read-aloud/ReadAloudPage";
 const MODELS = ["sonnet", "haiku", "opus"];
 const SAME_WINDOW_MINUTES = [15, 60, 240, 0];
 const KEEP_DAYS = [1, 7, 30, 0];
+const GRAB_FROM: GrabScreens[] = ["under_mouse", "every"];
+const FIRST_TOOLS: FirstTool[] = ["arrow", "box", "pin", "pen"];
 
 /** Ask: spoken questions answered by Claude Code. */
 export const AskPage: React.FC = () => {
@@ -69,8 +77,6 @@ export const AskPage: React.FC = () => {
     <div className="max-w-3xl w-full mx-auto space-y-6">
       <SettingsGroup title={t("ask.settings.askGroup")}>
         <ShortcutInput shortcutId="ask" grouped />
-        <ShortcutInput shortcutId="ask_grab" grouped />
-        <ShortcutInput shortcutId="ask_snap" grouped />
         <SettingContainer
           title={t("ask.settings.claude")}
           description={t("ask.settings.claudeDescription")}
@@ -121,6 +127,75 @@ export const AskPage: React.FC = () => {
         />
       </SettingsGroup>
 
+      <SettingsGroup title={t("ask.settings.grabsGroup")}>
+        <ShortcutInput shortcutId="ask_grab" grouped />
+        <ShortcutInput shortcutId="ask_snap" grouped />
+        <ToggleSwitch
+          label={t("ask.settings.grabStartsAsk")}
+          description={t("ask.settings.grabStartsAskDescription")}
+          checked={options.grab_starts_ask}
+          onChange={(on) => change({ grab_starts_ask: on })}
+          grouped
+        />
+        <ToggleSwitch
+          label={t("ask.settings.screenshotWithGrabs")}
+          description={t("ask.settings.screenshotWithGrabsDescription")}
+          checked={options.screenshot_with_grabs}
+          onChange={(on) => change({ screenshot_with_grabs: on })}
+          disabled={!options.screenshot}
+          grouped
+        />
+        <ToggleSwitch
+          label={t("ask.settings.keepGrabs")}
+          description={
+            options.keep_days > 0
+              ? t("ask.settings.keepGrabsDescription", {
+                  count: options.keep_days,
+                })
+              : t("ask.settings.keepGrabsDescriptionForever")
+          }
+          checked={options.keep_grabs}
+          onChange={(on) => change({ keep_grabs: on })}
+          grouped
+        />
+        <SettingContainer
+          title={t("ask.settings.grabFrom")}
+          description={t("ask.settings.grabFromDescription")}
+          grouped
+        >
+          <Dropdown
+            options={GRAB_FROM.map((from) => ({
+              value: from,
+              label: t(`ask.settings.grabFromOptions.${from}`),
+            }))}
+            selectedValue={options.grab_from}
+            onSelect={(from) => change({ grab_from: from as GrabScreens })}
+          />
+        </SettingContainer>
+        <SettingContainer
+          title={t("ask.settings.firstTool")}
+          description={t("ask.settings.firstToolDescription")}
+          grouped
+        >
+          <Dropdown
+            options={FIRST_TOOLS.map((tool) => ({
+              value: tool,
+              label: t(`ask.grab.tools.${tool}`),
+            }))}
+            selectedValue={options.first_tool}
+            onSelect={(tool) => change({ first_tool: tool as FirstTool })}
+          />
+        </SettingContainer>
+        <SettingContainer
+          title={t("ask.settings.markupKeys")}
+          description={t("ask.settings.markupKeysDescription")}
+          layout="stacked"
+          grouped
+        >
+          {null}
+        </SettingContainer>
+      </SettingsGroup>
+
       <SettingsGroup title={t("ask.settings.contextGroup")}>
         <SettingContainer
           title={t("ask.settings.selection")}
@@ -134,6 +209,27 @@ export const AskPage: React.FC = () => {
           description={t("ask.settings.screenshotDescription")}
           checked={options.screenshot}
           onChange={(on) => change({ screenshot: on })}
+          grouped
+        />
+        <ToggleSwitch
+          label={t("ask.settings.windowText")}
+          description={t("ask.settings.windowTextDescription")}
+          checked={options.window_text}
+          onChange={(on) => change({ window_text: on })}
+          grouped
+        />
+        <ToggleSwitch
+          label={t("ask.settings.pointer")}
+          description={t("ask.settings.pointerDescription")}
+          checked={options.pointer}
+          onChange={(on) => change({ pointer: on })}
+          grouped
+        />
+        <ToggleSwitch
+          label={t("ask.settings.appContext")}
+          description={t("ask.settings.appContextDescription")}
+          checked={options.app_context}
+          onChange={(on) => change({ app_context: on })}
           grouped
         />
         <ToggleSwitch

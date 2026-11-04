@@ -625,7 +625,7 @@ impl AskManager {
                 moved.marked.clone(),
                 moved.context.clone(),
             ),
-            None => (
+            None if settings.keep_grabs => (
                 self.keep(&question_id, &question.screen.pictures),
                 question
                     .screen
@@ -634,6 +634,27 @@ impl AskManager {
                     .and_then(|t| timeline::marked(&t.words, &t.events)),
                 note_for(&question),
             ),
+            // Not kept: they go to Claude from where they are, and go once
+            // answered.
+            None => (
+                Vec::new(),
+                question
+                    .screen
+                    .timeline
+                    .as_ref()
+                    .and_then(|t| timeline::marked(&t.words, &t.events)),
+                note_for(&question),
+            ),
+        };
+        let unkept: Vec<PathBuf> = if question.moved.is_none() && !settings.keep_grabs {
+            question
+                .screen
+                .pictures
+                .iter()
+                .map(|p| p.path.clone())
+                .collect()
+        } else {
+            Vec::new()
         };
         let images: Vec<PathBuf> = question
             .screen
@@ -641,6 +662,7 @@ impl AskManager {
             .iter()
             .cloned()
             .chain(pictures.iter().map(|p| PathBuf::from(&p.path)))
+            .chain(unkept.iter().cloned())
             .collect();
         thread.exchanges.push(Exchange {
             question: Question {
@@ -706,14 +728,15 @@ impl AskManager {
         let manager = Arc::clone(self);
         let thread_id = thread.id.clone();
         // The window's screenshot goes once answered; grabs and snaps stay
-        // with the thread.
+        // with the thread, unless the settings say not to keep them.
         let screenshot = question.screen.screenshot.clone();
+        let done_with: Vec<PathBuf> = screenshot.into_iter().chain(unkept).collect();
         let read_aloud = settings.read_aloud;
         std::thread::Builder::new()
             .name("ask".into())
             .spawn(move || {
                 manager.answer(&thread_id, &answer_id, request, generation, read_aloud);
-                if let Some(path) = screenshot {
+                for path in done_with {
                     let _ = std::fs::remove_file(path);
                 }
             })?;

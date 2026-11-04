@@ -87,6 +87,9 @@ pub fn pressed(app: &AppHandle, kind: CaptureKind, hotkey: &str) {
         std::thread::spawn(move || grab::open_for_draft(&app));
         return;
     }
+    if !voice::is_asking() && !crate::settings::get_settings(app).ask.grab_starts_ask {
+        return;
+    }
     let Some(coordinator) = app.try_state::<TranscriptionCoordinator>() else {
         log::warn!("TranscriptionCoordinator is not initialized");
         return;

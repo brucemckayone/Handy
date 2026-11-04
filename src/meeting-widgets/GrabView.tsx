@@ -199,6 +199,7 @@ export const GrabView: React.FC = () => {
     setKeysOpen(false);
     busy.current = false;
     if (!next) return;
+    setTool(next.first_tool);
     const img = new Image();
     // The asset protocol allows this page's origin, so the canvas that
     // crops the grab isn't tainted.

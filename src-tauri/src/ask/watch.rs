@@ -1,5 +1,6 @@
 //! What happens on screen while a question is asked: text selected in the
-//! app in front, and other windows coming to the front. Checked every 150 ms
+//! app in front, other windows coming to the front, and where the mouse is,
+//! for what a "this" points at. Checked every 150 ms
 //! on a thread of its own until the Ask key comes up; a Terminal selection
 //! reads in a few milliseconds.
 
@@ -19,6 +20,8 @@ const SETTLED: Duration = Duration::from_millis(300);
 /// An Ask nobody ends stops being watched after this.
 const LONGEST: Duration = Duration::from_secs(5 * 60);
 const MAX_EVENTS: usize = 40;
+/// Where the mouse was, for as long as an Ask is watched.
+const MAX_POINTER: usize = (LONGEST.as_millis() / EVERY.as_millis()) as usize;
 
 /// What the watch saw.
 #[derive(Debug, Default)]
@@ -27,6 +30,8 @@ pub struct Watched {
     /// `None` when the app can't say (then it is copied the old way).
     pub at_press: Option<String>,
     pub events: Vec<Event>,
+    /// Where the mouse was, in screen pixels, on the question's clock.
+    pub pointer: Vec<(u64, i32, i32)>,
 }
 
 pub struct Watch {
@@ -85,6 +90,7 @@ fn watch(started: Instant, mut front: Option<WindowInfo>, stop: &AtomicBool) -> 
     let mut watched = Watched {
         at_press: at_press.clone(),
         events: Vec::new(),
+        pointer: Vec::new(),
     };
     // Already part of the question; only changes from here are news.
     let mut known = at_press.unwrap_or_default();
@@ -94,6 +100,11 @@ fn watch(started: Instant, mut front: Option<WindowInfo>, stop: &AtomicBool) -> 
         && watched.events.len() < MAX_EVENTS
     {
         std::thread::sleep(EVERY);
+        if let Some((x, y)) = window::cursor().filter(|_| watched.pointer.len() < MAX_POINTER) {
+            watched
+                .pointer
+                .push((ms_since(started, Instant::now()), x, y));
+        }
         if let Some(now) = window::foreground().filter(|w| w.pid != own) {
             if front.as_ref().map(|f| f.handle) != Some(now.handle) {
                 watched.events.push(Event {

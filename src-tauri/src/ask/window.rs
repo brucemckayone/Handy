@@ -48,6 +48,29 @@ pub fn foreground() -> Option<WindowInfo> {
     info(unsafe { GetForegroundWindow() })
 }
 
+/// Where the mouse is, in screen pixels.
+#[cfg(windows)]
+pub fn cursor() -> Option<(i32, i32)> {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+    let mut point = POINT::default();
+    // SAFETY: a plain query; the point outlives the call that fills it.
+    unsafe { GetCursorPos(&mut point).ok()? };
+    Some((point.x, point.y))
+}
+
+/// Window `handle`'s place on the screen: left, top, right, bottom, as its
+/// screenshot is taken.
+#[cfg(windows)]
+pub fn rect(handle: isize) -> Option<[i32; 4]> {
+    use windows::Win32::Foundation::{HWND, RECT};
+    use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
+    let mut rect = RECT::default();
+    // SAFETY: a plain query; the rect outlives the call that fills it.
+    unsafe { GetWindowRect(HWND(handle as *mut core::ffi::c_void), &mut rect).ok()? };
+    Some([rect.left, rect.top, rect.right, rect.bottom])
+}
+
 /// The top-level window under the mouse, unless it is one of Handy's.
 #[cfg(windows)]
 pub fn under_mouse() -> Option<WindowInfo> {
@@ -101,6 +124,16 @@ pub fn foreground() -> Option<WindowInfo> {
 
 #[cfg(not(windows))]
 pub fn under_mouse() -> Option<WindowInfo> {
+    None
+}
+
+#[cfg(not(windows))]
+pub fn cursor() -> Option<(i32, i32)> {
+    None
+}
+
+#[cfg(not(windows))]
+pub fn rect(_handle: isize) -> Option<[i32; 4]> {
     None
 }
 

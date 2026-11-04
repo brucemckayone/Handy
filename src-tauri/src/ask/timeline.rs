@@ -121,7 +121,7 @@ fn clip(text: &str, max: usize) -> String {
 }
 
 /// "this", "here" and the like, ignoring case and punctuation.
-fn is_deictic(word: &str) -> bool {
+pub(crate) fn is_deictic(word: &str) -> bool {
     let bare: String = word
         .chars()
         .filter(|c| c.is_alphanumeric())

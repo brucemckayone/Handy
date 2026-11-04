@@ -32,6 +32,8 @@ use crate::speech::selection::CopyKeys;
 struct Pending {
     window: Option<WindowInfo>,
     screenshot: Option<JoinHandle<Option<PathBuf>>>,
+    /// Where that window was as its screenshot was taken.
+    rect: Option<[i32; 4]>,
     /// The Claude Code session running in that window, looked up meanwhile.
     agent: Option<JoinHandle<Option<Agent>>>,
     /// The key press: zero on the question's clock.
@@ -81,6 +83,7 @@ pub fn pressed(app: &AppHandle) {
         let handle = w.handle;
         std::thread::spawn(move || super::screenshot::capture(handle))
     });
+    let rect = window.as_ref().and_then(|w| window::rect(w.handle));
     let agent = window.clone().filter(|_| settings.use_agents).map(|w| {
         std::thread::spawn(move || {
             let agents = agents::list();
@@ -93,6 +96,7 @@ pub fn pressed(app: &AppHandle) {
     let pending = Pending {
         window,
         screenshot,
+        rect,
         agent,
         started,
         watch,
@@ -322,16 +326,18 @@ pub fn released(app: &AppHandle, text: String, audio: Option<AskAudio>) {
     std::thread::spawn(move || {
         show(&app, None);
         super::grab::close(&app);
-        let (window, screenshot, agent, started, mut watched, captures) = match pending {
+        let (window, screenshot, rect, agent, started, mut watched, captures) = match pending {
             Some(p) => (
                 p.window,
                 p.screenshot.and_then(|h| h.join().ok().flatten()),
+                p.rect,
                 p.agent.and_then(|h| h.join().ok().flatten()),
                 p.started,
                 p.watch.map(Watch::finish).unwrap_or_default(),
                 p.captures,
             ),
             None => (
+                None,
                 None,
                 None,
                 None,
@@ -357,10 +363,11 @@ pub fn released(app: &AppHandle, text: String, audio: Option<AskAudio>) {
                 (c.n, std::thread::spawn(move || ocr::read_png(&path)))
             })
             .collect();
-        let words: HashMap<u32, Vec<ocr::Word>> = reads
+        let pages: HashMap<u32, ocr::Page> = reads
             .into_iter()
-            .filter_map(|(n, read)| read.join().ok().map(|words| (n, words)))
+            .filter_map(|(n, read)| read.join().ok().map(|page| (n, page)))
             .collect();
+        let blank = ocr::Page::default();
         for capture in &captures {
             watched.events.push(Event {
                 at: capture.at,
@@ -369,19 +376,18 @@ pub fn released(app: &AppHandle, text: String, audio: Option<AskAudio>) {
                     of: capture.of.clone(),
                 },
             });
-            let words = words.get(&capture.n).map_or(&[][..], Vec::as_slice);
+            let page = pages.get(&capture.n).unwrap_or(&blank);
             watched
                 .events
                 .extend(capture.marks.iter().map(|(at, what)| {
                     let mut what = what.clone();
-                    let found = ocr::enclosed(words, &what);
+                    let found = ocr::enclosed(page, &what);
                     if let What::Mark { encloses, .. } = &mut what {
                         *encloses = found.or(encloses.take());
                     }
                     Event { at: *at, what }
                 }));
         }
-        watched.events.sort_by_key(|e| e.at);
         let pictures = captures
             .into_iter()
             .map(|c| Picture {
@@ -390,8 +396,26 @@ pub fn released(app: &AppHandle, text: String, audio: Option<AskAudio>) {
                 path: c.path,
             })
             .collect();
-        let timeline = (!watched.events.is_empty()).then(|| Timeline {
-            words: audio.map(|a| spoken(&app, a, started)).unwrap_or_default(),
+        // What the mouse was on at each "this", read off the window's
+        // screenshot. Timing the words costs a pass of the model, so only
+        // when a "this" was said or there is something to tie them to.
+        let pointing = screenshot
+            .as_ref()
+            .zip(rect)
+            .filter(|_| !watched.pointer.is_empty())
+            .filter(|_| text.split_whitespace().any(super::timeline::is_deictic));
+        let words = if pointing.is_some() || !watched.events.is_empty() {
+            audio.map(|a| spoken(&app, a, started)).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        if let Some((path, rect)) = pointing {
+            let pointed = ocr::pointed(&words, &watched.pointer, rect, path);
+            watched.events.extend(pointed);
+        }
+        watched.events.sort_by_key(|e| e.at);
+        let timeline = (!watched.events.is_empty()).then_some(Timeline {
+            words,
             events: watched.events,
         });
         if let Some(agent) = &agent {

@@ -1,12 +1,21 @@
 //! Words on a picture, read by Windows' own OCR (Windows.Media.Ocr), so
-//! nothing leaves the computer: what each mark on a grab or snap encloses,
-//! for the prompt ("box 2 round \"queue full, dropping 2\"").
+//! nothing leaves the computer: what each mark on a grab or snap encloses
+//! ("box 2 round \"queue full, dropping 2\""), and what the mouse was on
+//! at each "this" said ("pointing at \"Run tests\"").
 
 use std::path::Path;
 
-use super::timeline::{MarkKind, What};
+use super::timeline::{is_deictic, Event, MarkKind, Spoken, What};
 
-/// A word on a picture, its box in percent of the picture's size.
+/// The words on a picture, in reading order, and its size.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Page {
+    pub width: f32,
+    pub height: f32,
+    pub words: Vec<Word>,
+}
+
+/// A word on a picture, its box in the picture's pixels.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Word {
     pub text: String,
@@ -14,11 +23,32 @@ pub struct Word {
     pub x1: f32,
     pub y0: f32,
     pub y1: f32,
+    /// Which line of text it is on.
+    pub line: u32,
 }
 
 impl Word {
     fn middle(&self) -> (f32, f32) {
         ((self.x0 + self.x1) / 2.0, (self.y0 + self.y1) / 2.0)
+    }
+
+    /// How far `(x, y)` is from the word's box; nothing when inside it.
+    fn distance(&self, (x, y): (f32, f32)) -> f32 {
+        let dx = (self.x0 - x).max(x - self.x1).max(0.0);
+        let dy = (self.y0 - y).max(y - self.y1).max(0.0);
+        dx.hypot(dy)
+    }
+}
+
+impl Page {
+    /// A point in percent of the picture, in its pixels.
+    fn at(&self, x: f32, y: f32) -> (f32, f32) {
+        (x * self.width / 100.0, y * self.height / 100.0)
+    }
+
+    /// `percent` of the picture's longer side, in pixels.
+    fn reach(&self, percent: f32) -> f32 {
+        self.width.max(self.height) * percent / 100.0
     }
 }
 
@@ -27,20 +57,29 @@ const MAX_WORDS: usize = 16;
 /// How far outside a mark (percent) a word's middle may be and still count:
 /// a circle drawn tight, an underline just below.
 const SLACK: f32 = 1.5;
-/// How near a pin's point (percent) the word it points at must be.
+/// How near a pin's point (percent of the longer side) the word it points
+/// at must be.
 const PIN_REACH: f32 = 4.0;
+/// How near the mouse (percent of the longer side) a word must be for the
+/// mouse to be on it.
+const POINTER_REACH: f32 = 1.0;
+/// The most words either side of the one under the mouse that run on with
+/// it, as a button's or a link's whole text.
+const RUN_ON: usize = 4;
+/// How long before or after a "this" the mouse may have been seen.
+const POINTER_GAP_MS: u64 = 450;
 
-/// The words on the PNG at `path`, in reading order. Empty when Windows has
-/// no OCR language installed or the picture can't be read.
-pub fn read_png(path: &Path) -> Vec<Word> {
+/// The words on the PNG at `path`. Empty when Windows has no OCR language
+/// installed or the picture can't be read.
+pub fn read_png(path: &Path) -> Page {
     let Some((width, height, bgra)) = decode(path) else {
-        return Vec::new();
+        return Page::default();
     };
     match recognize(&bgra, width, height) {
-        Ok(words) => words,
+        Ok(page) => page,
         Err(e) => {
             log::debug!("Ask: couldn't read the words on {}: {e}", path.display());
-            Vec::new()
+            Page::default()
         }
     }
 }
@@ -48,7 +87,7 @@ pub fn read_png(path: &Path) -> Vec<Word> {
 /// What mark `what` encloses, from the words on its picture: those inside a
 /// box, circle, highlight or stroke, or the one a pin points at. Arrows
 /// point between marks or places, and text marks say their own words.
-pub fn enclosed(words: &[Word], what: &What) -> Option<String> {
+pub fn enclosed(page: &Page, what: &What) -> Option<String> {
     let What::Mark {
         n,
         kind,
@@ -60,35 +99,114 @@ pub fn enclosed(words: &[Word], what: &What) -> Option<String> {
     };
     // A mark's own number is drawn on the picture; it isn't a word there.
     let own = n.to_string();
-    let words = words.iter().filter(|w| w.text != own);
+    let words = page.words.iter().filter(|w| w.text != own);
     let picked: Vec<&str> = match kind {
         MarkKind::Arrow | MarkKind::Text => return None,
         MarkKind::Pin => {
-            let tip = ((f32::from(r.x0) + f32::from(r.x1)) / 2.0, f32::from(r.y1));
-            let distance = |w: &Word| {
-                let dx = (w.x0 - tip.0).max(tip.0 - w.x1).max(0.0);
-                let dy = (w.y0 - tip.1).max(tip.1 - w.y1).max(0.0);
-                dx.hypot(dy)
-            };
+            let tip = page.at((f32::from(r.x0) + f32::from(r.x1)) / 2.0, f32::from(r.y1));
+            let reach = page.reach(PIN_REACH);
             words
-                .filter(|w| distance(w) <= PIN_REACH)
-                .min_by(|a, b| distance(a).total_cmp(&distance(b)))
+                .filter(|w| w.distance(tip) <= reach)
+                .min_by(|a, b| a.distance(tip).total_cmp(&b.distance(tip)))
                 .map(|w| vec![w.text.as_str()])
                 .unwrap_or_default()
         }
-        MarkKind::Box | MarkKind::Circle | MarkKind::Highlight | MarkKind::Pen => words
-            .filter(|w| {
-                let (x, y) = w.middle();
-                x >= f32::from(r.x0) - SLACK
-                    && x <= f32::from(r.x1) + SLACK
-                    && y >= f32::from(r.y0) - SLACK
-                    && y <= f32::from(r.y1) + SLACK
-            })
-            .map(|w| w.text.as_str())
-            .take(MAX_WORDS)
-            .collect(),
+        MarkKind::Box | MarkKind::Circle | MarkKind::Highlight | MarkKind::Pen => {
+            let (x0, y0) = page.at(f32::from(r.x0) - SLACK, f32::from(r.y0) - SLACK);
+            let (x1, y1) = page.at(f32::from(r.x1) + SLACK, f32::from(r.y1) + SLACK);
+            words
+                .filter(|w| {
+                    let (x, y) = w.middle();
+                    (x0..=x1).contains(&x) && (y0..=y1).contains(&y)
+                })
+                .map(|w| w.text.as_str())
+                .take(MAX_WORDS)
+                .collect()
+        }
     };
     (!picked.is_empty()).then(|| picked.join(" "))
+}
+
+/// The words the mouse is on at (`x`, `y`), percent of the picture: the
+/// word there, or just by it, and those running on from it along its line,
+/// so a button or link reads whole.
+pub fn under(page: &Page, x: f32, y: f32) -> Option<String> {
+    let point = page.at(x, y);
+    let reach = page.reach(POINTER_REACH);
+    let words = &page.words;
+    let (at, _) = words
+        .iter()
+        .enumerate()
+        .map(|(i, w)| (i, w.distance(point)))
+        .filter(|&(_, d)| d <= reach)
+        .min_by(|a, b| a.1.total_cmp(&b.1))?;
+    // Words run on while the gap between them is no more than a space.
+    let runs_on = |a: &Word, b: &Word| {
+        let space = 0.6 * (a.y1 - a.y0).max(b.y1 - b.y0);
+        a.line == b.line && b.x0 - a.x1 <= space
+    };
+    let mut first = at;
+    while first > 0 && at - first < RUN_ON && runs_on(&words[first - 1], &words[first]) {
+        first -= 1;
+    }
+    let mut last = at;
+    while last + 1 < words.len() && last - at < RUN_ON && runs_on(&words[last], &words[last + 1]) {
+        last += 1;
+    }
+    let text: Vec<&str> = words[first..=last]
+        .iter()
+        .map(|w| w.text.as_str())
+        .collect();
+    Some(text.join(" "))
+}
+
+/// For each "this" said, where the mouse was then, in percent of the window
+/// at `rect` (left, top, right, bottom); none when it was off the window or
+/// not seen near then.
+fn targets(said: &[Spoken], pointer: &[(u64, i32, i32)], rect: [i32; 4]) -> Vec<(u64, f32, f32)> {
+    let [left, top, right, bottom] = rect;
+    let (width, height) = ((right - left) as f32, (bottom - top) as f32);
+    if width <= 0.0 || height <= 0.0 {
+        return Vec::new();
+    }
+    said.iter()
+        .filter(|s| is_deictic(&s.text))
+        .filter_map(|s| {
+            let &(_, x, y) = pointer
+                .iter()
+                .filter(|(at, ..)| at.abs_diff(s.at) <= POINTER_GAP_MS)
+                .min_by_key(|(at, ..)| at.abs_diff(s.at))?;
+            let x = (x - left) as f32 / width * 100.0;
+            let y = (y - top) as f32 / height * 100.0;
+            ((0.0..=100.0).contains(&x) && (0.0..=100.0).contains(&y)).then_some((s.at, x, y))
+        })
+        .collect()
+}
+
+/// What the mouse was on at each "this" said, read off the screenshot of
+/// the window at `rect` taken as the key went down.
+pub fn pointed(
+    said: &[Spoken],
+    pointer: &[(u64, i32, i32)],
+    rect: [i32; 4],
+    screenshot: &Path,
+) -> Vec<Event> {
+    let targets = targets(said, pointer, rect);
+    if targets.is_empty() {
+        return Vec::new();
+    }
+    let page = read_png(screenshot);
+    targets
+        .into_iter()
+        .filter_map(|(at, x, y)| {
+            Some(Event {
+                at,
+                what: What::Pointed {
+                    label: under(&page, x, y)?,
+                },
+            })
+        })
+        .collect()
 }
 
 /// A PNG's pixels as BGRA, for OCR.
@@ -139,7 +257,7 @@ fn thin(bgra: &[u8], width: u32, height: u32, step: u32) -> (u32, u32, Vec<u8>) 
 }
 
 #[cfg(windows)]
-fn recognize(bgra: &[u8], width: u32, height: u32) -> windows::core::Result<Vec<Word>> {
+fn recognize(bgra: &[u8], width: u32, height: u32) -> windows::core::Result<Page> {
     use windows::Graphics::Imaging::{BitmapPixelFormat, SoftwareBitmap};
     use windows::Media::Ocr::OcrEngine;
     use windows::Storage::Streams::DataWriter;
@@ -164,25 +282,29 @@ fn recognize(bgra: &[u8], width: u32, height: u32) -> windows::core::Result<Vec<
         height as i32,
     )?;
     let result = engine.RecognizeAsync(&bitmap)?.get()?;
-    let (w, h) = (width as f32, height as f32);
     let mut words = Vec::new();
-    for line in result.Lines()? {
+    for (n, line) in result.Lines()?.into_iter().enumerate() {
         for word in line.Words()? {
             let r = word.BoundingRect()?;
             words.push(Word {
                 text: word.Text()?.to_string_lossy(),
-                x0: r.X / w * 100.0,
-                x1: (r.X + r.Width) / w * 100.0,
-                y0: r.Y / h * 100.0,
-                y1: (r.Y + r.Height) / h * 100.0,
+                x0: r.X,
+                x1: r.X + r.Width,
+                y0: r.Y,
+                y1: r.Y + r.Height,
+                line: n as u32,
             });
         }
     }
-    Ok(words)
+    Ok(Page {
+        width: width as f32,
+        height: height as f32,
+        words,
+    })
 }
 
 #[cfg(not(windows))]
-fn recognize(_bgra: &[u8], _width: u32, _height: u32) -> Result<Vec<Word>, String> {
+fn recognize(_bgra: &[u8], _width: u32, _height: u32) -> Result<Page, String> {
     Err("OCR is only on Windows".into())
 }
 
@@ -191,13 +313,14 @@ mod tests {
     use super::*;
     use crate::ask::timeline::Region;
 
-    fn word(text: &str, x0: f32, x1: f32, y0: f32, y1: f32) -> Word {
+    fn word(text: &str, line: u32, x0: f32, x1: f32, y0: f32, y1: f32) -> Word {
         Word {
             text: text.into(),
             x0,
             x1,
             y0,
             y1,
+            line,
         }
     }
 
@@ -213,15 +336,20 @@ mod tests {
         }
     }
 
-    fn page() -> Vec<Word> {
-        vec![
-            word("queue", 10.0, 18.0, 10.0, 14.0),
-            word("full,", 19.0, 25.0, 10.0, 14.0),
-            word("dropping", 26.0, 38.0, 10.0, 14.0),
-            word("2", 39.0, 41.0, 10.0, 14.0),
-            word("stream", 10.0, 19.0, 40.0, 44.0),
-            word("done", 20.0, 27.0, 40.0, 44.0),
-        ]
+    /// 100 pixels square, so percent and pixels agree.
+    fn page() -> Page {
+        Page {
+            width: 100.0,
+            height: 100.0,
+            words: vec![
+                word("queue", 0, 10.0, 18.0, 10.0, 14.0),
+                word("full,", 0, 19.0, 25.0, 10.0, 14.0),
+                word("dropping", 0, 26.0, 38.0, 10.0, 14.0),
+                word("2", 0, 39.0, 41.0, 10.0, 14.0),
+                word("stream", 1, 10.0, 19.0, 40.0, 44.0),
+                word("done", 1, 20.0, 27.0, 40.0, 44.0),
+            ],
+        }
     }
 
     #[test]
@@ -259,6 +387,51 @@ mod tests {
         for what in [arrow, text, empty] {
             assert_eq!(enclosed(&page(), &what), None);
         }
+    }
+
+    /// A toolbar, then a row of buttons, on a 1000 x 500 window.
+    fn toolbar() -> Page {
+        Page {
+            width: 1000.0,
+            height: 500.0,
+            words: vec![
+                word("File", 0, 10.0, 40.0, 10.0, 30.0),
+                word("Edit", 0, 80.0, 110.0, 10.0, 30.0),
+                word("Run", 1, 10.0, 40.0, 100.0, 120.0),
+                word("tests", 1, 46.0, 90.0, 100.0, 120.0),
+                word("Cancel", 1, 140.0, 200.0, 100.0, 120.0),
+            ],
+        }
+    }
+
+    #[test]
+    fn the_mouse_is_on_a_word_and_the_words_running_on_from_it() {
+        // On "tests": "Run" is a space away, "Cancel" well apart.
+        assert_eq!(under(&toolbar(), 6.8, 22.0).as_deref(), Some("Run tests"));
+        assert_eq!(under(&toolbar(), 2.5, 4.0).as_deref(), Some("File"));
+        assert_eq!(under(&toolbar(), 50.0, 80.0), None);
+    }
+
+    #[test]
+    fn each_this_finds_where_the_mouse_was_then() {
+        let said = |at: u64, text: &str| Spoken {
+            at,
+            text: text.into(),
+        };
+        let words = [
+            said(1_000, "what's"),
+            said(1_300, "this?"),
+            said(2_000, "that"),
+            said(3_000, "here"),
+        ];
+        let pointer = [(900, 150, 250), (1_350, 300, 400), (2_000, 5_000, 5_000)];
+        // The window is 1000 x 500 at (100, 200). "that" was off it, and
+        // nobody saw the mouse near "here".
+        assert_eq!(
+            targets(&words, &pointer, [100, 200, 1_100, 700]),
+            [(1_300, 20.0, 40.0)]
+        );
+        assert!(targets(&words, &pointer, [0, 0, 0, 0]).is_empty());
     }
 
     #[test]
@@ -353,13 +526,15 @@ mod tests {
         let (width, height) = (640, 110);
         let pixels = drawn("queue full dropping", width, height);
         let words = match recognize(&pixels, width as u32, height as u32) {
-            Ok(words) => words,
+            Ok(page) => page.words,
             // No OCR language installed here: nothing to check.
             Err(_) => return,
         };
         let text: Vec<&str> = words.iter().map(|w| w.text.as_str()).collect();
         assert_eq!(text, ["queue", "full", "dropping"]);
         assert!(words[0].x0 < words[1].x0 && words[1].x0 < words[2].x0);
-        assert!(words.iter().all(|w| w.y0 > 10.0 && w.y1 < 90.0));
+        assert!(words
+            .iter()
+            .all(|w| w.line == 0 && w.y0 > 10.0 && w.y1 < 100.0));
     }
 }

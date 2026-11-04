@@ -20,7 +20,9 @@ pub mod speaker;
 pub mod store;
 pub mod tidy;
 pub mod timeline;
+pub mod uia;
 pub mod voice;
+pub mod watch;
 pub mod window;
 
 use anyhow::{anyhow, Result};

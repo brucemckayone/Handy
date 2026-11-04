@@ -83,6 +83,14 @@ pub struct Event {
     pub what: What,
 }
 
+/// Everything one spoken question did, on its clock.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Timeline {
+    /// Empty when the words couldn't be timed.
+    pub words: Vec<Spoken>,
+    pub events: Vec<Event>,
+}
+
 impl Event {
     /// Things a "this" can mean.
     fn is_pointable(&self) -> bool {
@@ -283,7 +291,7 @@ pub fn marks(events: &[Event]) -> Vec<String> {
         .collect()
 }
 
-fn seconds(ms: u64) -> String {
+pub fn seconds(ms: u64) -> String {
     format!("{}.{}", ms / 1000, ms % 1000 / 100)
 }
 

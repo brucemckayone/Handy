@@ -640,6 +640,9 @@ impl ShortcutAction for TranscribeAction {
 
         // Unregister the cancel shortcut when transcription stops
         shortcut::unregister_cancel_shortcut(app);
+        if self.ask {
+            crate::ask::voice::stopped();
+        }
 
         if let Some(meeting) = crate::meeting::manager(app) {
             meeting.dictation_stopped();
@@ -691,6 +694,10 @@ impl ShortcutAction for TranscribeAction {
                 // Read now: by the time transcribing ends, another take may
                 // have replaced it.
                 let input_silent = rm.last_input_silent();
+                let ask_audio = ask.then(|| crate::ask::voice::AskAudio {
+                    samples: samples.clone(),
+                    timing: rm.last_timing(),
+                });
                 debug!(
                     "Recording stopped and samples retrieved in {:?}, sample count: {}",
                     stop_recording_time.elapsed(),
@@ -812,7 +819,11 @@ impl ShortcutAction for TranscribeAction {
                                 let outcome = if processed.final_text.trim().is_empty() {
                                     empty_outcome(input_silent)
                                 } else {
-                                    crate::ask::voice::released(&ah, processed.final_text);
+                                    crate::ask::voice::released(
+                                        &ah,
+                                        processed.final_text,
+                                        ask_audio,
+                                    );
                                     TranscriptionOutcome::Typed
                                 };
                                 emit_transcription_complete(&ah, outcome, sample_count, stop_time);

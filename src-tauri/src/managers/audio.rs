@@ -4,7 +4,8 @@ use crate::audio_toolkit::{
         frames_for_duration_ms, EarshotVad, SmoothedVad, VAD_OFFLINE_HANGOVER_MS, VAD_ONSET_MS,
         VAD_PREFILL_MS, VAD_STREAMING_HANGOVER_MS,
     },
-    CaptureSink, CaptureVad, SileroVad, SpeechScorer, VadPolicy, VoiceActivityDetector,
+    AudioTiming, CaptureSink, CaptureVad, SileroVad, SpeechScorer, VadPolicy,
+    VoiceActivityDetector,
 };
 use crate::helpers::clamshell;
 use crate::managers::transcription::StreamRouter;
@@ -497,6 +498,8 @@ pub struct AudioRecordingManager {
     cached_device: Arc<Mutex<Option<(String, String)>>>,
     /// The last recording was all-zero samples, not just audio without speech.
     last_input_silent: Arc<AtomicBool>,
+    /// When the last recording's kept audio was heard.
+    last_timing: Arc<Mutex<AudioTiming>>,
 }
 
 impl AudioRecordingManager {
@@ -538,6 +541,7 @@ impl AudioRecordingManager {
             capture_generation: Arc::new(AtomicU64::new(0)),
             cached_device: Arc::new(Mutex::new(None)),
             last_input_silent: Arc::new(AtomicBool::new(false)),
+            last_timing: Arc::new(Mutex::new(AudioTiming::default())),
         };
 
         // Always-on?  Open immediately.
@@ -960,12 +964,14 @@ impl AudioRecordingManager {
                 self.return_vad(captured.vad);
                 self.last_input_silent
                     .store(captured.input_silent, Ordering::Release);
+                *self.last_timing.lock().unwrap() = captured.timing;
                 captured.samples
             }
             Err(e) => {
                 // The recording and its detector are lost with the sink.
                 error!("Failed to stop recording: {e}");
                 self.last_input_silent.store(false, Ordering::Release);
+                *self.last_timing.lock().unwrap() = AudioTiming::default();
                 if e.kind() != ErrorKind::NotRecording {
                     microphone.failed.store(true, Ordering::Release);
                 }
@@ -1191,6 +1197,11 @@ impl AudioRecordingManager {
     /// Whether the last stopped recording's device sent only digital silence.
     pub fn last_input_silent(&self) -> bool {
         self.last_input_silent.load(Ordering::Acquire)
+    }
+
+    /// When the last stopped recording's kept audio was heard.
+    pub fn last_timing(&self) -> AudioTiming {
+        self.last_timing.lock().unwrap().clone()
     }
 
     pub fn was_cancelled_since(&self, generation: u64) -> bool {

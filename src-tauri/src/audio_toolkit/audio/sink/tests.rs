@@ -1,4 +1,6 @@
-use super::{AudioFrameCallback, CaptureSink, CaptureVad, LevelCallback, VadPolicy};
+use super::{
+    AudioFrameCallback, AudioTiming, CaptureSink, CaptureVad, KeptRun, LevelCallback, VadPolicy,
+};
 use crate::audio_toolkit::vad::{VadFrame, VoiceActivityDetector};
 use handy_recorder::{AudioChunk, Sink};
 use std::sync::{mpsc, Arc, Mutex};
@@ -156,6 +158,66 @@ fn vad_keeps_speech_frames_only() {
     let expected = [[1.0; FRAME], [2.0; FRAME]].concat();
     assert_eq!(*h.fed.lock().unwrap(), expected);
     assert_eq!(h.sink.finish().samples, expected);
+}
+
+#[test]
+fn vad_notes_where_each_kept_stretch_was_heard() {
+    let mut h = harness(VadPolicy::Offline);
+    h.sink.process_chunk(chunk(&[1.0; FRAME], FRAME));
+    h.sink.process_chunk(chunk(&[3.0; FRAME], FRAME));
+    h.sink.process_chunk(chunk(&[0.0; FRAME], FRAME));
+    h.sink.process_chunk(chunk(&[2.0; FRAME], FRAME));
+    let timing = h.sink.finish().timing;
+    assert!(timing.first_audio.is_some());
+    // Two kept frames in a row are one stretch; the dropped frame splits it.
+    assert_eq!(
+        timing.kept,
+        vec![
+            KeptRun {
+                output: 0,
+                input: 0,
+                len: 2 * FRAME,
+            },
+            KeptRun {
+                output: 2 * FRAME,
+                input: 3 * FRAME,
+                len: FRAME,
+            },
+        ]
+    );
+}
+
+#[test]
+fn kept_audio_times_map_back_across_what_vad_dropped() {
+    let first = std::time::Instant::now();
+    // 1 s kept, then 2 s dropped, then 1 s kept (16 kHz).
+    let timing = AudioTiming {
+        first_audio: Some(first),
+        kept: vec![
+            KeptRun {
+                output: 0,
+                input: 0,
+                len: 16_000,
+            },
+            KeptRun {
+                output: 16_000,
+                input: 48_000,
+                len: 16_000,
+            },
+        ],
+    };
+    let ms = |ms: u64| {
+        timing
+            .heard_at(ms)
+            .unwrap()
+            .duration_since(first)
+            .as_millis()
+    };
+    assert_eq!(ms(500), 500);
+    assert_eq!(ms(1_500), 3_500);
+    // Past the end it stays at the last kept sample.
+    assert_eq!(ms(9_000), 4_000);
+    assert_eq!(AudioTiming::default().heard_at(10), None);
 }
 
 #[test]

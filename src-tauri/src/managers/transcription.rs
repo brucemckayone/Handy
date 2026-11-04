@@ -31,7 +31,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_specta::Event;
-use transcribe_cpp::{Backend, RunOptions, Task, Transcript};
+use transcribe_cpp::{Backend, RunOptions, Task, TimestampKind, Transcript, Word};
 
 mod chunked;
 mod job;
@@ -936,6 +936,24 @@ impl TranscriptionManager {
         let started = Instant::now();
         let live = self.finalize_live(samples.len())?;
         self.complete(started, samples, live)
+    }
+
+    /// `audio`'s words with when each was said, in the audio's own time: for
+    /// an Ask whose "this" and "here" must meet what was done as they were
+    /// said. A run of its own, as the live decode keeps no times; empty when
+    /// the model gives none.
+    pub fn word_times(&self, audio: Vec<f32>) -> Result<Vec<Word>> {
+        let mark = self.engine.cancel_mark();
+        self.touch_activity();
+        let batch = self.batch_context(&audio)?;
+        let options = RunOptions {
+            timestamps: TimestampKind::Word,
+            ..batch.setup.run_options.clone()
+        };
+        let transcript = self
+            .run_batch(mark, audio, &options, &batch.active_model)
+            .map_err(engine_error)?;
+        Ok(transcript.words)
     }
 
     /// The final text of one transcription, from its live result or else a

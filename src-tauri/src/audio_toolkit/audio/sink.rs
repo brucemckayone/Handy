@@ -1,4 +1,5 @@
 use std::sync::{mpsc, Arc};
+use std::time::{Duration, Instant};
 
 use handy_recorder::{AudioChunk, Sink};
 
@@ -67,6 +68,53 @@ pub type LevelCallback = Arc<dyn Fn(Vec<f32>) + Send + Sync + 'static>;
 /// order. Used to feed live streaming transcription as audio arrives.
 pub type AudioFrameCallback = Arc<dyn Fn(&[f32]) + Send + Sync + 'static>;
 
+/// A stretch the recording kept: `len` samples at `output` in the kept audio
+/// were heard `input` samples into what the microphone delivered.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct KeptRun {
+    pub output: usize,
+    pub input: usize,
+    pub len: usize,
+}
+
+/// When the kept audio was heard. VAD drops the quiet stretches, so a time
+/// in the kept audio (a word's, say) is not a time on the clock until it is
+/// mapped back through the runs.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AudioTiming {
+    /// When the microphone's first sample was heard.
+    pub first_audio: Option<Instant>,
+    pub kept: Vec<KeptRun>,
+}
+
+impl AudioTiming {
+    fn keep(&mut self, run: KeptRun) {
+        if let Some(last) = self.kept.last_mut() {
+            if last.output + last.len == run.output && last.input + last.len == run.input {
+                last.len += run.len;
+                return;
+            }
+        }
+        self.kept.push(run);
+    }
+
+    /// When the moment `ms` into the kept audio was heard. Past the end it
+    /// stays at the last kept sample.
+    pub fn heard_at(&self, ms: u64) -> Option<Instant> {
+        let first = self.first_audio?;
+        let rate = constants::WHISPER_SAMPLE_RATE as u64;
+        let output = (ms * rate / 1000) as usize;
+        let run = self
+            .kept
+            .iter()
+            .rev()
+            .find(|r| r.output <= output)
+            .or(self.kept.first())?;
+        let input = run.input + output.saturating_sub(run.output).min(run.len);
+        Some(first + Duration::from_millis(input as u64 * 1000 / rate))
+    }
+}
+
 /// What a finished recording hands back.
 pub struct CapturedAudio {
     /// 16 kHz mono samples that passed the VAD policy.
@@ -76,6 +124,7 @@ pub struct CapturedAudio {
     pub input_silent: bool,
     /// The detector the recording borrowed, for the next one.
     pub vad: CaptureVad,
+    pub timing: AudioTiming,
 }
 
 /// One recording's consumer of 16 kHz mono audio from handy-recorder. Runs on
@@ -92,6 +141,9 @@ pub struct CaptureSink {
     ready: Option<mpsc::Sender<()>>,
     samples: Vec<f32>,
     heard_sound: bool,
+    /// Samples received so far, before VAD.
+    received: usize,
+    timing: AudioTiming,
 }
 
 /// Spectrum window at 16 kHz: 32 ms, near the overlay's ~30 Hz refresh.
@@ -128,6 +180,8 @@ impl CaptureSink {
             ready: Some(ready),
             samples: Vec::new(),
             heard_sound: false,
+            received: 0,
+            timing: AudioTiming::default(),
         }
     }
 
@@ -160,10 +214,24 @@ impl CaptureSink {
             // `ready` is spent on the first chunk, so `None` means audio came.
             input_silent: self.ready.is_none() && !self.heard_sound,
             vad: self.vad,
+            timing: self.timing,
         }
     }
 
-    fn emit(samples: &mut Vec<f32>, on_audio: &AudioFrameCallback, frame: &[f32]) {
+    /// Keeps `frame`, which ends `input_end` samples into the recording: VAD
+    /// hands speech back as one unbroken stretch ending at the frame just in.
+    fn emit(
+        samples: &mut Vec<f32>,
+        timing: &mut AudioTiming,
+        on_audio: &AudioFrameCallback,
+        frame: &[f32],
+        input_end: usize,
+    ) {
+        timing.keep(KeptRun {
+            output: samples.len(),
+            input: input_end.saturating_sub(frame.len()),
+            len: frame.len(),
+        });
         samples.extend_from_slice(frame);
         on_audio(frame);
     }
@@ -173,6 +241,9 @@ impl Sink for CaptureSink {
     fn process_chunk(&mut self, chunk: AudioChunk<'_>) {
         if let Some(ready) = self.ready.take() {
             let _ = ready.send(());
+            // The chunk was heard over the time it lasts, up to now.
+            let lasted = chunk.valid_frames as u64 * 1000 / constants::WHISPER_SAMPLE_RATE as u64;
+            self.timing.first_audio = Instant::now().checked_sub(Duration::from_millis(lasted));
         }
         if !self.heard_sound && !chunk.is_digital_silence() {
             self.heard_sound = true;
@@ -184,10 +255,20 @@ impl Sink for CaptureSink {
             (self.on_levels)(levels);
         }
 
+        let input_start = self.received;
         if self.policy == VadPolicy::Disabled {
-            Self::emit(&mut self.samples, &self.on_audio, real);
+            self.received += real.len();
+            Self::emit(
+                &mut self.samples,
+                &mut self.timing,
+                &self.on_audio,
+                real,
+                self.received,
+            );
             return;
         }
+        // Whole frames: the final chunk's zero padding counts as heard.
+        self.received += chunk.samples.len();
 
         // The detector needs whole frames, so the final chunk goes in with its
         // zero padding; at most one frame of silence reaches the recording.
@@ -197,7 +278,13 @@ impl Sink for CaptureSink {
             .push_frame(chunk.samples)
             .unwrap_or(VadFrame::Speech(chunk.samples))
         {
-            VadFrame::Speech(frame) => Self::emit(&mut self.samples, &self.on_audio, frame),
+            VadFrame::Speech(frame) => Self::emit(
+                &mut self.samples,
+                &mut self.timing,
+                &self.on_audio,
+                frame,
+                input_start + chunk.samples.len(),
+            ),
             VadFrame::Noise => {}
         }
     }

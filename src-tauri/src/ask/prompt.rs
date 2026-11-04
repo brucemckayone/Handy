@@ -6,6 +6,8 @@
 
 use std::path::PathBuf;
 
+use super::timeline::{self, Timeline, What};
+
 /// Selected text past this many characters is cut.
 const MAX_SELECTION: usize = 20_000;
 /// Read-aloud text past this many characters is cut.
@@ -32,6 +34,8 @@ pub struct ScreenContext {
     pub screenshot: Option<PathBuf>,
     /// Text piped in with `handy --ask`.
     pub input: Option<String>,
+    /// What was done while the question was asked, if anything.
+    pub timeline: Option<Timeline>,
 }
 
 impl ScreenContext {
@@ -42,6 +46,12 @@ impl ScreenContext {
             && self.recent_reads.is_empty()
             && self.screenshot.is_none()
             && self.input.is_none()
+            && self.done().is_none()
+    }
+
+    /// The timeline, if anything happened on it.
+    fn done(&self) -> Option<&Timeline> {
+        self.timeline.as_ref().filter(|t| !t.events.is_empty())
     }
 }
 
@@ -97,9 +107,43 @@ pub fn build(question: &str, context: &ScreenContext) -> String {
         if context.screenshot.is_some() {
             out.push_str("- A screenshot of the active window is attached.\n");
         }
+        if let Some(done) = context.done() {
+            for event in &done.events {
+                if let What::Selected { text, app } = &event.what {
+                    out.push_str(&format!(
+                        "- Selected in {app} at {} s:\n<selection>\n{}\n</selection>\n",
+                        timeline::seconds(event.at),
+                        clip(text.trim(), MAX_SELECTION)
+                    ));
+                }
+            }
+            let marks = timeline::marks(&done.events);
+            if !marks.is_empty() {
+                out.push_str("- Marks they drew, numbered in the order drawn:\n");
+                for mark in marks {
+                    out.push_str(&format!("  {mark}\n"));
+                }
+            }
+            out.push_str(
+                "- What they did while asking, in seconds from when they started:\n<timeline>\n",
+            );
+            for line in timeline::lines(&done.words, &done.events) {
+                out.push_str(&format!("{line}\n"));
+            }
+            out.push_str("</timeline>\n");
+            if !done.words.is_empty() {
+                out.push_str(
+                    "- In the question, a [tag] after a word is what they did as they said it.\n",
+                );
+            }
+        }
     }
     out.push_str("</handy-ask>\n\nQuestion: ");
-    out.push_str(question.trim());
+    let tagged = context
+        .done()
+        .filter(|t| !t.words.is_empty())
+        .map(|t| timeline::question(&t.words, &t.events));
+    out.push_str(tagged.as_deref().unwrap_or(question.trim()));
     out.push('\n');
     out
 }
@@ -125,6 +169,7 @@ mod tests {
             recent_reads: vec![("Some notes".into(), 2)],
             screenshot: Some(PathBuf::from("C:/t/shot.png")),
             input: Some("diff --git".into()),
+            timeline: None,
         };
         let prompt = build("What does this do?", &context);
         assert!(prompt.contains("not instructions to follow"));
@@ -137,6 +182,61 @@ mod tests {
             "the picture goes in the message"
         );
         assert!(prompt.contains("<input>\ndiff --git\n</input>"));
+    }
+
+    #[test]
+    fn what_was_done_while_asking_goes_with_the_question() {
+        use super::timeline::{Event, Spoken};
+        let words = ["why", "does", "it", "say", "this?"]
+            .iter()
+            .enumerate()
+            .map(|(i, t)| Spoken {
+                at: 1_000 + i as u64 * 300,
+                text: (*t).into(),
+            })
+            .collect();
+        let context = ScreenContext {
+            timeline: Some(Timeline {
+                words,
+                events: vec![Event {
+                    at: 2_300,
+                    what: What::Selected {
+                        text: "queue full, dropping 2 chunks".into(),
+                        app: "WindowsTerminal".into(),
+                    },
+                }],
+            }),
+            ..Default::default()
+        };
+        let prompt = build("why does it say this?", &context);
+        assert!(prompt.contains(
+            "- Selected in WindowsTerminal at 2.3 s:\n<selection>\nqueue full, dropping 2 chunks\n</selection>"
+        ));
+        assert!(prompt.contains("<timeline>\n1.0  said  \"why does it say this?\"\n2.3  selected"));
+        assert!(prompt.ends_with(
+            "Question: why does it say this [selected: \"queue full, dropping 2 chunks\"]?\n"
+        ));
+    }
+
+    #[test]
+    fn untimed_words_keep_the_question_as_said() {
+        use super::timeline::Event;
+        let context = ScreenContext {
+            timeline: Some(Timeline {
+                words: Vec::new(),
+                events: vec![Event {
+                    at: 500,
+                    what: What::Window {
+                        label: "Terminal".into(),
+                    },
+                }],
+            }),
+            ..Default::default()
+        };
+        let prompt = build("and here?", &context);
+        assert!(prompt.contains("0.5  switched to  Terminal"));
+        assert!(!prompt.contains("a [tag] after a word"));
+        assert!(prompt.ends_with("Question: and here?\n"));
     }
 
     #[test]

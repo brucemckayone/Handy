@@ -114,6 +114,9 @@ tauri-plugin-updater = "2.10.1"
 # version wry links against so the COM types are identical.
 webview2-com = "0.38"
 windows = { version = "0.61.3", features = [
+  "Graphics_Imaging",
+  "Media_Ocr",
+  "Storage_Streams",
   "System_UserProfile",
   "Win32_Media_Audio_Endpoints",
   "Win32_System_Com",

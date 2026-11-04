@@ -13,6 +13,7 @@ pub mod cli;
 pub mod commands;
 pub mod expiry;
 pub mod grab;
+pub mod ocr;
 pub mod panel;
 pub mod prompt;
 pub mod recent;

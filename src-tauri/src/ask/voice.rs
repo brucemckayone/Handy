@@ -8,6 +8,7 @@ use log::{debug, warn};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -17,6 +18,7 @@ use tauri_specta::Event as _;
 
 use super::agents::{self, Agent};
 use super::capture::{Capture, CaptureKind, CaptureView};
+use super::ocr;
 use super::prompt::{Picture, ScreenContext};
 use super::store::Via;
 use super::timeline::{Event, Spoken, Timeline, What};
@@ -346,6 +348,19 @@ pub fn released(app: &AppHandle, text: String, audio: Option<AskAudio>) {
             }
             keep
         });
+        // What each mark encloses, read off its picture, all at once.
+        let reads: Vec<_> = captures
+            .iter()
+            .filter(|c| !c.marks.is_empty())
+            .map(|c| {
+                let path = c.path.clone();
+                (c.n, std::thread::spawn(move || ocr::read_png(&path)))
+            })
+            .collect();
+        let words: HashMap<u32, Vec<ocr::Word>> = reads
+            .into_iter()
+            .filter_map(|(n, read)| read.join().ok().map(|words| (n, words)))
+            .collect();
         for capture in &captures {
             watched.events.push(Event {
                 at: capture.at,
@@ -354,11 +369,16 @@ pub fn released(app: &AppHandle, text: String, audio: Option<AskAudio>) {
                     of: capture.of.clone(),
                 },
             });
+            let words = words.get(&capture.n).map_or(&[][..], Vec::as_slice);
             watched
                 .events
-                .extend(capture.marks.iter().map(|(at, what)| Event {
-                    at: *at,
-                    what: what.clone(),
+                .extend(capture.marks.iter().map(|(at, what)| {
+                    let mut what = what.clone();
+                    let found = ocr::enclosed(words, &what);
+                    if let What::Mark { encloses, .. } = &mut what {
+                        *encloses = found.or(encloses.take());
+                    }
+                    Event { at: *at, what }
                 }));
         }
         watched.events.sort_by_key(|e| e.at);

@@ -1315,6 +1315,24 @@ async removeAskCapture(n: number) : Promise<void> {
     await TAURI_INVOKE("remove_ask_capture", { n });
 },
 /**
+ * The panel's grab button: a grab for the question being typed.
+ */
+async grabForAskDraft() : Promise<void> {
+    await TAURI_INVOKE("grab_for_ask_draft");
+},
+/**
+ * The grabs waiting with the panel's draft.
+ */
+async getAskDraft() : Promise<CaptureView[]> {
+    return await TAURI_INVOKE("get_ask_draft");
+},
+/**
+ * A grab is taken off the panel's draft.
+ */
+async removeAskDraftGrab(n: number) : Promise<void> {
+    await TAURI_INVOKE("remove_ask_draft_grab", { n });
+},
+/**
  * Recent threads, newest first.
  */
 async listAskThreads() : Promise<Result<ThreadListItem[], string>> {
@@ -1446,6 +1464,7 @@ export const events = __makeEvents__<{
 askBusyEvent: AskBusyEvent,
 askDeletedEvent: AskDeletedEvent,
 askDeltaEvent: AskDeltaEvent,
+askDraftEvent: AskDraftEvent,
 askGrabEscapeEvent: AskGrabEscapeEvent,
 askGrabEvent: AskGrabEvent,
 askLiveEvent: AskLiveEvent,
@@ -1470,6 +1489,7 @@ transcriptionJob: TranscriptionJob
 askBusyEvent: "ask-busy-event",
 askDeletedEvent: "ask-deleted-event",
 askDeltaEvent: "ask-delta-event",
+askDraftEvent: "ask-draft-event",
 askGrabEscapeEvent: "ask-grab-escape-event",
 askGrabEvent: "ask-grab-event",
 askLiveEvent: "ask-live-event",
@@ -1635,6 +1655,10 @@ export type AskDeletedEvent = { thread_id: string }
  * before Claude used a tool).
  */
 export type AskDeltaEvent = { thread_id: string; answer_id: string; reset: boolean; text: string }
+/**
+ * The grabs waiting with the panel's draft.
+ */
+export type AskDraftEvent = { captures: CaptureView[] }
 /**
  * Esc reached Handy's cancel shortcut instead of the overlay, which
  * treats it as its own.
@@ -1842,7 +1866,11 @@ first_mark: number;
  * The window under the mouse, for a region that isn't a window; for a
  * capture, the window it shows.
  */
-under_mouse: string; capture: GrabCapture | null }
+under_mouse: string; capture: GrabCapture | null; 
+/**
+ * For a question being typed in the panel: it waits with the draft.
+ */
+draft: boolean }
 /**
  * A mark as drawn in the overlay.
  */

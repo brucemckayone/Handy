@@ -19,7 +19,7 @@ use tauri_specta::Event as _;
 use super::agents::{self, Agent};
 use super::capture::{Capture, CaptureKind, CaptureView};
 use super::ocr;
-use super::prompt::{Picture, ScreenContext, WindowText};
+use super::prompt::{ScreenContext, WindowText};
 use super::store::Via;
 use super::timeline::{Event, Spoken, Timeline, What};
 use super::watch::{Watch, Watched};
@@ -172,7 +172,7 @@ pub fn add_capture(app: &AppHandle, mut capture: Capture) {
 
 /// Marks timed "this long before the picture was added at `added`", on the
 /// Ask clock and on the picture called `name`.
-fn on_clock(marks: Vec<(u64, What)>, added: u64, name: &str) -> Vec<(u64, What)> {
+pub(super) fn on_clock(marks: Vec<(u64, What)>, added: u64, name: &str) -> Vec<(u64, What)> {
     marks
         .into_iter()
         .map(|(ago, mut what)| {
@@ -182,6 +182,49 @@ fn on_clock(marks: Vec<(u64, What)>, added: u64, name: &str) -> Vec<(u64, What)>
             (added.saturating_sub(ago), what)
         })
         .collect()
+}
+
+/// Each capture taken and the marks on it, as the timeline has them, with
+/// what each mark encloses read off its picture (all pictures at once).
+pub(super) fn capture_events(captures: &[Capture]) -> Vec<Event> {
+    let reads: Vec<_> = captures
+        .iter()
+        .filter(|c| !c.marks.is_empty())
+        .map(|c| {
+            let path = c.path.clone();
+            (c.n, std::thread::spawn(move || ocr::read_png(&path)))
+        })
+        .collect();
+    let pages: HashMap<u32, ocr::Page> = reads
+        .into_iter()
+        .filter_map(|(n, read)| read.join().ok().map(|page| (n, page)))
+        .collect();
+    let blank = ocr::Page::default();
+    let mut events = Vec::new();
+    for capture in captures {
+        events.push(Event {
+            at: capture.at,
+            what: What::Capture {
+                name: capture.name(),
+                of: capture.of.clone(),
+            },
+        });
+        let page = pages.get(&capture.n).unwrap_or(&blank);
+        events.extend(capture.marks.iter().map(|(at, what)| {
+            let mut what = what.clone();
+            let found = ocr::enclosed(page, &what);
+            if let What::Mark { encloses, .. } = &mut what {
+                *encloses = found.or(encloses.take());
+            }
+            Event { at: *at, what }
+        }));
+    }
+    events
+}
+
+/// A spoken question is being asked.
+pub fn is_asking() -> bool {
+    PENDING.lock().is_ok_and(|slot| slot.is_some())
 }
 
 /// The highest mark number so far, across the question's pictures: the next
@@ -363,49 +406,8 @@ pub fn released(app: &AppHandle, text: String, audio: Option<AskAudio>) {
                 keep
             })
             .unzip();
-        // What each mark encloses, read off its picture, all at once.
-        let reads: Vec<_> = captures
-            .iter()
-            .filter(|c| !c.marks.is_empty())
-            .map(|c| {
-                let path = c.path.clone();
-                (c.n, std::thread::spawn(move || ocr::read_png(&path)))
-            })
-            .collect();
-        let pages: HashMap<u32, ocr::Page> = reads
-            .into_iter()
-            .filter_map(|(n, read)| read.join().ok().map(|page| (n, page)))
-            .collect();
-        let blank = ocr::Page::default();
-        for capture in &captures {
-            watched.events.push(Event {
-                at: capture.at,
-                what: What::Capture {
-                    name: capture.name(),
-                    of: capture.of.clone(),
-                },
-            });
-            let page = pages.get(&capture.n).unwrap_or(&blank);
-            watched
-                .events
-                .extend(capture.marks.iter().map(|(at, what)| {
-                    let mut what = what.clone();
-                    let found = ocr::enclosed(page, &what);
-                    if let What::Mark { encloses, .. } = &mut what {
-                        *encloses = found.or(encloses.take());
-                    }
-                    Event { at: *at, what }
-                }));
-        }
-        let pictures = captures
-            .into_iter()
-            .map(|c| Picture {
-                kind: c.kind,
-                name: c.name(),
-                of: c.of,
-                path: c.path,
-            })
-            .collect();
+        watched.events.extend(capture_events(&captures));
+        let pictures = captures.into_iter().map(Capture::into_picture).collect();
         // What the mouse was on at each "this", read off the window's
         // screenshot. Timing the words costs a pass of the model, so only
         // when a "this" was said or there is something to tie them to.

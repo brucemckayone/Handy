@@ -371,7 +371,7 @@ export const GrabView: React.FC = () => {
         }
       } else if (e.key === "Enter") {
         e.preventDefault();
-        add(ctrl);
+        add(ctrl && !frame.draft);
       } else if (ctrl && (letter === "y" || (letter === "z" && e.shiftKey))) {
         e.preventDefault();
         redo();
@@ -716,8 +716,14 @@ export const GrabView: React.FC = () => {
         <>
           <div className="absolute top-3 inset-x-0 flex justify-center pointer-events-none">
             <span className="h-[34px] px-3.5 flex items-center gap-2.5 rounded-full bg-[rgba(31,26,34,0.92)] text-white text-[13px]">
-              <span className="size-2 rounded-full bg-logo-primary" />
-              {t("ask.grab.stillListening")}
+              {frame.draft ? (
+                t("ask.grab.forDraft")
+              ) : (
+                <>
+                  <span className="size-2 rounded-full bg-logo-primary" />
+                  {t("ask.grab.stillListening")}
+                </>
+              )}
               <span
                 aria-hidden="true"
                 className="size-[3px] rounded-full bg-white/70"
@@ -850,18 +856,21 @@ export const GrabView: React.FC = () => {
               {frame.capture ? t("ask.grab.done") : t("ask.grab.add")}
               <kbd className={key}>{t("ask.grab.keyEnter")}</kbd>
             </button>
-            <button
-              type="button"
-              className="h-9 ml-1 px-2.5 flex items-center gap-1.5 rounded-[9px] bg-background-ui text-white font-semibold cursor-pointer"
-              onClick={() => add(true)}
-            >
-              {frame.capture
-                ? t("ask.grab.doneAndAsk")
-                : t("ask.grab.addAndAsk")}
-              <kbd className="font-[inherit] text-[10px] leading-3 px-[3px] rounded border border-white/50 border-b-2 bg-black/15 text-white">
-                {t("ask.grab.keyCtrlEnter")}
-              </kbd>
-            </button>
+            {/* A typed question is sent from the panel. */}
+            {!frame.draft && (
+              <button
+                type="button"
+                className="h-9 ml-1 px-2.5 flex items-center gap-1.5 rounded-[9px] bg-background-ui text-white font-semibold cursor-pointer"
+                onClick={() => add(true)}
+              >
+                {frame.capture
+                  ? t("ask.grab.doneAndAsk")
+                  : t("ask.grab.addAndAsk")}
+                <kbd className="font-[inherit] text-[10px] leading-3 px-[3px] rounded border border-white/50 border-b-2 bg-black/15 text-white">
+                  {t("ask.grab.keyCtrlEnter")}
+                </kbd>
+              </button>
+            )}
           </div>
         </>
       ) : (

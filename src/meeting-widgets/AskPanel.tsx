@@ -30,6 +30,7 @@ import {
   commands,
   events,
   type Answer,
+  type CaptureView,
   type ContextNote,
   type Exchange,
   type QuestionPicture,
@@ -95,7 +96,10 @@ export const AskPanel: React.FC = () => {
   const [draft, setDraft] = useState("");
   const [speaking, setSpeaking] = useState(false);
   const [shortcut, setShortcut] = useState("");
+  const [grabKey, setGrabKey] = useState("");
   const [keepDays, setKeepDays] = useState(7);
+  // Grabs waiting to go with the typed question.
+  const [drafted, setDrafted] = useState<CaptureView[]>([]);
   const threadId = useRef<string | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
@@ -133,9 +137,15 @@ export const AskPanel: React.FC = () => {
     commands.getAppSettings().then((result) => {
       if (result.status !== "ok") return;
       setShortcut(result.data.bindings?.ask?.current_binding ?? "");
+      setGrabKey(result.data.bindings?.ask_grab?.current_binding ?? "");
       setKeepDays(result.data.ask?.keep_days ?? 7);
     });
+    commands.getAskDraft().then(setDrafted);
     const unlisteners = [
+      events.askDraftEvent.listen(({ payload }) => {
+        setDrafted(payload.captures);
+        input.current?.focus();
+      }),
       events.askOpenEvent.listen(({ payload }) => {
         setMenuOpen(false);
         showThread(payload.thread_id);
@@ -188,6 +198,10 @@ export const AskPanel: React.FC = () => {
   };
 
   const shortcutLabel = shortcut ? keycapLabel(shortcut, osType) : "";
+  const grabLabel = grabKey ? keycapLabel(grabKey, osType) : "";
+  const grabButtonLabel = grabLabel
+    ? t("ask.panel.grabWithKey", { key: grabLabel })
+    : t("ask.panel.grab");
   const agent = thread?.agent;
 
   return (
@@ -368,6 +382,35 @@ export const AskPanel: React.FC = () => {
       )}
 
       <div className="shrink-0 px-3 pb-3 flex flex-col gap-1.5">
+        {drafted.map((capture) => (
+          <div
+            key={capture.n}
+            className="flex items-center gap-2 py-1.5 ps-2 pe-1.5 rounded-[10px] border border-line bg-background"
+          >
+            <img
+              src={capture.thumbnail}
+              alt=""
+              className="w-14 h-9 shrink-0 object-cover rounded-[5px] border border-line"
+            />
+            <span className="flex-1 min-w-0 flex flex-col">
+              <span className="text-[13px] truncate">
+                {t("ask.pill.grabN", { n: capture.n, of: capture.of })}
+              </span>
+              <span className="text-xs text-ink-2">
+                {t("ask.panel.goesWithQuestion")}
+              </span>
+            </span>
+            <button
+              type="button"
+              onClick={() => commands.removeAskDraftGrab(capture.n)}
+              aria-label={t("ask.panel.removeGrab")}
+              title={t("ask.panel.removeGrab")}
+              className={smallIconButton}
+            >
+              <X className="w-3.5 h-3.5" aria-hidden="true" />
+            </button>
+          </div>
+        ))}
         <div className="flex items-end gap-2 p-2 ps-3 rounded-xl border border-line-strong/50 bg-background focus-within:border-background-ui/60">
           <label htmlFor="ask-input" className="sr-only">
             {t("ask.panel.followUpLabel")}
@@ -391,6 +434,15 @@ export const AskPanel: React.FC = () => {
           />
           <button
             type="button"
+            onClick={() => commands.grabForAskDraft()}
+            aria-label={grabButtonLabel}
+            title={grabButtonLabel}
+            className="w-8 h-8 shrink-0 rounded-full flex items-center justify-center text-ink-2 hover:bg-wash cursor-pointer"
+          >
+            <GrabIcon />
+          </button>
+          <button
+            type="button"
             onClick={send}
             disabled={!draft.trim()}
             aria-label={t("ask.panel.send")}
@@ -403,7 +455,12 @@ export const AskPanel: React.FC = () => {
         {shortcutLabel && (
           <span className="flex items-center gap-1.5 px-1 text-xs text-ink-2">
             <Mic className="w-3 h-3" aria-hidden="true" />
-            {t("ask.panel.voiceHint", { shortcut: shortcutLabel })}
+            {grabLabel
+              ? t("ask.panel.voiceAndGrabHint", {
+                  shortcut: shortcutLabel,
+                  grab: grabLabel,
+                })
+              : t("ask.panel.voiceHint", { shortcut: shortcutLabel })}
           </span>
         )}
       </div>
@@ -592,6 +649,28 @@ const ExchangeView: React.FC<{
     </>
   );
 };
+
+/** The composer's grab button: corners round a plus, as in the design. */
+const GrabIcon: React.FC = () => (
+  <svg
+    width="17"
+    height="17"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M3 7V5a2 2 0 0 1 2-2h2" />
+    <path d="M17 3h2a2 2 0 0 1 2 2v2" />
+    <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
+    <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
+    <path d="M8 12h8" />
+    <path d="M12 8v8" />
+  </svg>
+);
 
 /** "1 grab, 1 snap · 3 marks". */
 const picturesLabel = (

@@ -7,8 +7,9 @@ use specta::Type;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 
+use super::prompt::Picture;
 use super::timeline::What;
-use super::{grab, screenshot, voice, window};
+use super::{draft, grab, screenshot, voice, window};
 use crate::TranscriptionCoordinator;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -44,6 +45,16 @@ impl Capture {
         };
         format!("{kind} {}", self.n)
     }
+
+    /// The picture as it goes with the question.
+    pub fn into_picture(self) -> Picture {
+        Picture {
+            kind: self.kind,
+            name: self.name(),
+            of: self.of,
+            path: self.path,
+        }
+    }
 }
 
 /// A capture as the pill shows it.
@@ -69,6 +80,13 @@ impl From<&Capture> for CaptureView {
 /// A capture key went down: the question goes hands-free (or starts so),
 /// then the picture is taken.
 pub fn pressed(app: &AppHandle, kind: CaptureKind, hotkey: &str) {
+    // Typing in the panel: a grab goes with the draft, and no spoken
+    // question starts.
+    if kind == CaptureKind::Grab && draft::panel_focused(app) && !voice::is_asking() {
+        let app = app.clone();
+        std::thread::spawn(move || grab::open_for_draft(&app));
+        return;
+    }
     let Some(coordinator) = app.try_state::<TranscriptionCoordinator>() else {
         log::warn!("TranscriptionCoordinator is not initialized");
         return;

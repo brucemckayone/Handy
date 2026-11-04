@@ -55,6 +55,8 @@ pub struct GrabFrame {
     /// capture, the window it shows.
     pub under_mouse: String,
     pub capture: Option<GrabCapture>,
+    /// For a question being typed in the panel: it waits with the draft.
+    pub draft: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type, tauri_specta::Event)]
@@ -195,9 +197,19 @@ fn screen_under_mouse(app: &AppHandle) -> Option<(PhysicalPosition<i32>, Physica
     Some((*monitor.position(), *monitor.size()))
 }
 
-/// Freezes the screen under the mouse and opens the overlay on it. Call off
-/// the main thread: copying a 4K screen takes a moment.
+/// Freezes the screen under the mouse and opens the overlay on it, for the
+/// question being asked. Call off the main thread: copying a 4K screen
+/// takes a moment.
 pub fn open(app: &AppHandle) {
+    open_screen(app, false);
+}
+
+/// As [`open`], for the question being typed in the panel.
+pub fn open_for_draft(app: &AppHandle) {
+    open_screen(app, true);
+}
+
+fn open_screen(app: &AppHandle, draft: bool) {
     if is_open() {
         return;
     }
@@ -220,9 +232,14 @@ pub fn open(app: &AppHandle) {
         width: screen.width,
         height: screen.height,
         windows: windows_on(origin.x, origin.y, screen.width, screen.height),
-        first_mark: voice::marks_so_far() + 1,
+        first_mark: if draft {
+            super::draft::marks_so_far()
+        } else {
+            voice::marks_so_far()
+        } + 1,
         under_mouse,
         capture: None,
+        draft,
     };
     present(app, frame, origin, size);
 }
@@ -256,6 +273,7 @@ pub fn open_capture(app: &AppHandle, n: u32) {
             width,
             height,
         }),
+        draft: false,
     };
     present(app, frame, origin, size);
 }
@@ -317,7 +335,9 @@ pub fn finish(app: &AppHandle, result: GrabResult) -> Result<(), String> {
         .decode(result.png.as_bytes())
         .map_err(|e| format!("not base64: {e}"))?;
     let path: PathBuf = screenshot::save_png_bytes(&png).ok_or("couldn't save the grab")?;
-    let again = frame().and_then(|f| f.capture).map(|c| c.n);
+    let open = frame();
+    let again = open.as_ref().and_then(|f| f.capture.as_ref()).map(|c| c.n);
+    let draft = open.is_some_and(|f| f.draft);
     close(app);
     debug!(
         "Ask: grab of {} with {} marks",
@@ -329,20 +349,24 @@ pub fn finish(app: &AppHandle, result: GrabResult) -> Result<(), String> {
         .iter()
         .map(|m| (u64::from(m.ago_ms), m.what()))
         .collect();
+    let capture = |marks| Capture {
+        kind: CaptureKind::Grab,
+        n: 0,
+        of: result.of,
+        path: path.clone(),
+        thumbnail: result.thumbnail.clone(),
+        at: 0,
+        marks,
+    };
     match again {
         Some(n) => voice::marked_up(app, n, path, result.thumbnail, marks),
-        None => voice::add_capture(
-            app,
-            Capture {
-                kind: CaptureKind::Grab,
-                n: 0,
-                of: result.of,
-                path,
-                thumbnail: result.thumbnail,
-                at: 0,
-                marks,
-            },
-        ),
+        None if draft => {
+            super::draft::add(app, capture(marks));
+            super::draft::refocus_panel(app);
+            // A typed question is sent from the panel.
+            return Ok(());
+        }
+        None => voice::add_capture(app, capture(marks)),
     }
     if result.ask_now {
         if let Some(coordinator) = app.try_state::<crate::TranscriptionCoordinator>() {

@@ -83,6 +83,27 @@ pub fn open_ask_capture(app: AppHandle, n: u32) {
     std::thread::spawn(move || super::grab::open_capture(&app, n));
 }
 
+/// The panel's grab button: a grab for the question being typed.
+#[tauri::command]
+#[specta::specta]
+pub fn grab_for_ask_draft(app: AppHandle) {
+    std::thread::spawn(move || super::grab::open_for_draft(&app));
+}
+
+/// The grabs waiting with the panel's draft.
+#[tauri::command]
+#[specta::specta]
+pub fn get_ask_draft() -> Vec<super::capture::CaptureView> {
+    super::draft::captures()
+}
+
+/// A grab is taken off the panel's draft.
+#[tauri::command]
+#[specta::specta]
+pub fn remove_ask_draft_grab(app: AppHandle, n: u32) {
+    super::draft::remove(&app, n);
+}
+
 /// A picture is taken out of the question being asked.
 #[tauri::command]
 #[specta::specta]
@@ -114,9 +135,21 @@ pub fn ask_typed(
     if text.trim().is_empty() {
         return Err("empty".to_string());
     }
-    ask_manager(&app)?
-        .ask(NewQuestion::text(text, Via::Typed, thread_id))
-        .map_err(|e| e.to_string())
+    let mut question = NewQuestion::text(text, Via::Typed, thread_id);
+    // Grabs waiting with the draft go with it.
+    let captures = super::draft::take(&app);
+    if !captures.is_empty() {
+        let events = super::voice::capture_events(&captures);
+        question.screen.pictures = captures
+            .into_iter()
+            .map(super::capture::Capture::into_picture)
+            .collect();
+        question.screen.timeline = Some(super::timeline::Timeline {
+            words: Vec::new(),
+            events,
+        });
+    }
+    ask_manager(&app)?.ask(question).map_err(|e| e.to_string())
 }
 
 /// Stops the answer being worked on.

@@ -915,6 +915,9 @@ pub fn run(mut cli_args: CliArgs) {
             ask::commands::close_ask_grab,
             ask::commands::open_ask_capture,
             ask::commands::remove_ask_capture,
+            ask::commands::grab_for_ask_draft,
+            ask::commands::get_ask_draft,
+            ask::commands::remove_ask_draft_grab,
             ask::commands::list_ask_threads,
             ask::commands::get_ask_thread,
             ask::commands::ask_typed,
@@ -952,6 +955,7 @@ pub fn run(mut cli_args: CliArgs) {
             ask::voice::AskLiveEvent,
             ask::grab::AskGrabEvent,
             ask::grab::AskGrabEscapeEvent,
+            ask::draft::AskDraftEvent,
         ]);
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds

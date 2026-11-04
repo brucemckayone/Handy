@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 
 /// Wider shots are scaled down: plenty to read, and fewer tokens.
 const MAX_WIDTH: u32 = 1600;
+/// The pill's thumbnails, at twice their size for high-DPI screens.
+const THUMBNAIL_WIDTH: u32 = 96;
 
 /// Where screenshots wait for their question.
 pub fn dir() -> PathBuf {
@@ -13,6 +15,7 @@ pub fn dir() -> PathBuf {
 }
 
 /// RGB pixels, `width * height * 3` bytes, rows top first.
+#[derive(Clone)]
 struct Image {
     width: u32,
     height: u32,
@@ -21,10 +24,10 @@ struct Image {
 
 /// Shrinks by a whole factor so the width is at most `max_width`, averaging
 /// each block of pixels.
-fn shrink(image: Image, max_width: u32) -> Image {
+fn shrink(image: &Image, max_width: u32) -> Image {
     let factor = image.width.div_ceil(max_width).max(1);
     if factor == 1 {
-        return image;
+        return image.clone();
     }
     let (w, h) = (image.width / factor, image.height / factor);
     let mut rgb = Vec::with_capacity((w * h * 3) as usize);
@@ -50,18 +53,40 @@ fn shrink(image: Image, max_width: u32) -> Image {
     }
 }
 
-fn save_png(image: &Image, path: &Path) -> anyhow::Result<()> {
-    let file = std::io::BufWriter::new(std::fs::File::create(path)?);
-    let mut encoder = png::Encoder::new(file, image.width, image.height);
+fn write_png(image: &Image, out: impl std::io::Write) -> anyhow::Result<()> {
+    let mut encoder = png::Encoder::new(out, image.width, image.height);
     encoder.set_color(png::ColorType::Rgb);
     encoder.set_depth(png::BitDepth::Eight);
     encoder.write_header()?.write_image_data(&image.rgb)?;
     Ok(())
 }
 
+fn save_png(image: &Image, path: &Path) -> anyhow::Result<()> {
+    write_png(image, std::io::BufWriter::new(std::fs::File::create(path)?))
+}
+
+/// A small copy as a PNG data URL, for the pill.
+fn thumbnail(image: &Image) -> Option<String> {
+    use base64::Engine as _;
+    let mut png = Vec::new();
+    write_png(&shrink(image, THUMBNAIL_WIDTH), &mut png).ok()?;
+    let data = base64::engine::general_purpose::STANDARD.encode(png);
+    Some(format!("data:image/png;base64,{data}"))
+}
+
 /// Captures window `handle` into a new PNG in [`dir`].
 pub fn capture(handle: isize) -> Option<PathBuf> {
+    save(&grab(handle)?)
+}
+
+/// Captures window `handle` into a new PNG, with a thumbnail of it.
+pub fn capture_with_thumbnail(handle: isize) -> Option<(PathBuf, String)> {
     let image = grab(handle)?;
+    let thumbnail = thumbnail(&image)?;
+    Some((save(&image)?, thumbnail))
+}
+
+fn save(image: &Image) -> Option<PathBuf> {
     let image = shrink(image, MAX_WIDTH);
     let dir = dir();
     std::fs::create_dir_all(&dir).ok()?;
@@ -178,7 +203,7 @@ mod tests {
             rgb.extend([255u8; 6]);
         }
         let small = shrink(
-            Image {
+            &Image {
                 width: 4,
                 height: 2,
                 rgb,
@@ -192,7 +217,7 @@ mod tests {
     #[test]
     fn small_images_are_kept() {
         let image = shrink(
-            Image {
+            &Image {
                 width: 3,
                 height: 1,
                 rgb: vec![1; 9],
@@ -200,6 +225,29 @@ mod tests {
             1600,
         );
         assert_eq!(image.width, 3);
+    }
+
+    #[test]
+    fn thumbnails_are_small_pngs_in_a_data_url() {
+        use base64::Engine as _;
+        let image = Image {
+            width: 1000,
+            height: 600,
+            rgb: vec![200; 1000 * 600 * 3],
+        };
+        let url = thumbnail(&image).expect("a thumbnail");
+        let data = url
+            .strip_prefix("data:image/png;base64,")
+            .expect("a PNG data URL");
+        let png = base64::engine::general_purpose::STANDARD
+            .decode(data)
+            .unwrap();
+        let reader = png::Decoder::new(std::io::Cursor::new(png))
+            .read_info()
+            .unwrap();
+        let info = reader.info();
+        assert!(info.width <= THUMBNAIL_WIDTH, "{} wide", info.width);
+        assert_eq!(info.width * 6, info.height * 10, "the shape is kept");
     }
 
     #[cfg(windows)]

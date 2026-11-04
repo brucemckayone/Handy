@@ -7,6 +7,7 @@ use specta::Type;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 
+use super::{screenshot, voice, window};
 use crate::TranscriptionCoordinator;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -78,6 +79,39 @@ pub fn pressed(app: &AppHandle, kind: CaptureKind, hotkey: &str) {
 }
 
 /// Takes the picture, off the coordinator's thread.
-fn take(_app: &AppHandle, kind: CaptureKind) {
-    log::debug!("Ask: {kind:?} key pressed; nothing to take it with yet");
+fn take(app: &AppHandle, kind: CaptureKind) {
+    match kind {
+        CaptureKind::Snap => {
+            let app = app.clone();
+            std::thread::spawn(move || snap(&app));
+        }
+        CaptureKind::Grab => log::debug!("Ask: grab key pressed; nothing to grab with yet"),
+    }
+}
+
+/// The window under the mouse as it is now; the one in front when the mouse
+/// is over Handy's own pill.
+fn snap(app: &AppHandle) {
+    let own = std::process::id();
+    let Some(window) =
+        window::under_mouse().or_else(|| window::foreground().filter(|w| w.pid != own))
+    else {
+        log::debug!("Ask: no window to snap");
+        return;
+    };
+    let Some((path, thumbnail)) = screenshot::capture_with_thumbnail(window.handle) else {
+        log::warn!("Ask: couldn't snap {}", window.app());
+        return;
+    };
+    voice::add_capture(
+        app,
+        Capture {
+            kind: CaptureKind::Snap,
+            n: 0,
+            of: window.label(),
+            path,
+            thumbnail,
+            at: 0,
+        },
+    );
 }

@@ -43,12 +43,32 @@ impl WindowInfo {
 /// The window in front, or `None` if there isn't one.
 #[cfg(windows)]
 pub fn foreground() -> Option<WindowInfo> {
+    use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+    // SAFETY: a plain query.
+    info(unsafe { GetForegroundWindow() })
+}
+
+/// The top-level window under the mouse, unless it is one of Handy's.
+#[cfg(windows)]
+pub fn under_mouse() -> Option<WindowInfo> {
+    use windows::Win32::Foundation::POINT;
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId,
+        GetAncestor, GetCursorPos, WindowFromPoint, GA_ROOT,
     };
+    let mut point = POINT::default();
+    // SAFETY: plain queries; the point outlives the call that fills it.
+    let hwnd = unsafe {
+        GetCursorPos(&mut point).ok()?;
+        GetAncestor(WindowFromPoint(point), GA_ROOT)
+    };
+    info(hwnd).filter(|w| w.pid != std::process::id())
+}
+
+#[cfg(windows)]
+fn info(hwnd: windows::Win32::Foundation::HWND) -> Option<WindowInfo> {
+    use windows::Win32::UI::WindowsAndMessaging::{GetWindowTextW, GetWindowThreadProcessId};
     // SAFETY: plain queries on a window handle; the buffers outlive the calls.
     unsafe {
-        let hwnd = GetForegroundWindow();
         if hwnd.is_invalid() {
             return None;
         }
@@ -68,6 +88,11 @@ pub fn foreground() -> Option<WindowInfo> {
 
 #[cfg(not(windows))]
 pub fn foreground() -> Option<WindowInfo> {
+    None
+}
+
+#[cfg(not(windows))]
+pub fn under_mouse() -> Option<WindowInfo> {
     None
 }
 

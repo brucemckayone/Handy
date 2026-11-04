@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { joins, markAt, shapes, toGrabMarks, type Mark } from "./grabMarks";
+import {
+  fit,
+  joins,
+  markAt,
+  shapes,
+  toGrabMarks,
+  type Mark,
+} from "./grabMarks";
 
 const grab = { x: 100, y: 100, width: 400, height: 200 };
 const mark = (id: number, kind: Mark["kind"], points: number[][]): Mark => ({
@@ -70,5 +77,20 @@ const text = (m: Mark, n: number) =>
 assert.deepEqual(text(box, 7), ["7"]);
 assert.deepEqual(text(pin, 8), ["8"]);
 assert.deepEqual(text(label, 9), ["  this one ", "9"]);
+
+// A capture opened again fits the screen, centred, and never grows.
+const area = { x: 0, y: 0, width: 1000, height: 500 };
+assert.deepEqual(fit(2000, 500, area), {
+  x: 0,
+  y: 125,
+  width: 1000,
+  height: 250,
+});
+assert.deepEqual(fit(200, 100, area), {
+  x: 400,
+  y: 200,
+  width: 200,
+  height: 100,
+});
 
 console.log("grabMarks: all assertions passed");

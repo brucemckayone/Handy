@@ -18,12 +18,13 @@ import {
   Undo2,
   type LucideIcon,
 } from "lucide-react";
-import { commands, events, type GrabFrame } from "@/bindings";
+import { commands, events, type GrabCapture, type GrabFrame } from "@/bindings";
 import {
   COLORS,
   FONT,
   TEXT_SIZE,
   clampTo,
+  fit,
   fromPoints,
   inside,
   markAt,
@@ -63,10 +64,12 @@ const TOOLS: { tool: Tool; key: string; icon: LucideIcon }[] = [
 const COLOR_NAMES = ["pink", "amber", "blue"] as const;
 
 /** `part` of `image` with `marks` drawn in, as a PNG data URL at most
- * `maxWidth` wide. */
+ * `maxWidth` wide. The marks are in the overlay's pixels, where the part
+ * shows at `shown`. */
 const crop = (
   image: HTMLImageElement,
   part: Rect,
+  shown: Rect,
   maxWidth: number,
   marks: Shape[],
 ) => {
@@ -87,12 +90,22 @@ const crop = (
       canvas.width,
       canvas.height,
     );
-    // Marks are in the frozen screen's pixels, like the part.
-    context.setTransform(scale, 0, 0, scale, -part.x * scale, -part.y * scale);
+    const k = canvas.width / shown.width;
+    context.setTransform(k, 0, 0, k, -shown.x * k, -shown.y * k);
     paint(context, marks);
   }
   return canvas.toDataURL("image/png");
 };
+
+/** Where a capture opened again shows: as large as fits between the hint
+ * and the toolbar, never larger than it is. */
+const placed = (frame: GrabFrame, capture: GrabCapture): Rect =>
+  fit(capture.width, capture.height, {
+    x: frame.width * 0.06,
+    y: frame.height * 0.09,
+    width: frame.width * 0.88,
+    height: frame.height * 0.68,
+  });
 
 const ShapeView: React.FC<{ shape: Shape }> = ({ shape }) =>
   "d" in shape ? (
@@ -171,7 +184,12 @@ export const GrabView: React.FC = () => {
     setFrame(next);
     setImage(null);
     setDrag(null);
-    setPicked(null);
+    // A capture opened again is already picked: all of it.
+    setPicked(
+      next?.capture
+        ? { rect: placed(next, next.capture), of: next.under_mouse }
+        : null,
+    );
     setResize(null);
     setHistory(EMPTY);
     setDraft(null);
@@ -281,11 +299,21 @@ export const GrabView: React.FC = () => {
       const drawn = marks.flatMap((m, i) =>
         shapes(m, frame.first_mark + i, scale),
       );
-      const png = crop(image, picked.rect, MAX_WIDTH, drawn).replace(
+      // A frozen screen is cropped where the grab is; a capture opened again
+      // is all used, at its own size.
+      const part = frame.capture
+        ? {
+            x: 0,
+            y: 0,
+            width: frame.capture.width,
+            height: frame.capture.height,
+          }
+        : picked.rect;
+      const png = crop(image, part, picked.rect, MAX_WIDTH, drawn).replace(
         /^data:image\/png;base64,/,
         "",
       );
-      const thumbnail = crop(image, picked.rect, THUMBNAIL_WIDTH, drawn);
+      const thumbnail = crop(image, part, picked.rect, THUMBNAIL_WIDTH, drawn);
       const result = await commands.finishAskGrab({
         png,
         thumbnail,
@@ -528,12 +556,30 @@ export const GrabView: React.FC = () => {
       onMouseMove={onMouseMove}
       onMouseUp={onMouseUp}
     >
-      <img
-        src={image.src}
-        alt=""
-        draggable={false}
-        className="absolute inset-0 w-screen h-screen"
-      />
+      {frame.capture && picked ? (
+        <>
+          <div className="absolute inset-0 bg-[rgb(24,20,28)]" />
+          <img
+            src={image.src}
+            alt=""
+            draggable={false}
+            className="absolute"
+            style={{
+              left: css(picked.rect.x),
+              top: css(picked.rect.y),
+              width: css(picked.rect.width),
+              height: css(picked.rect.height),
+            }}
+          />
+        </>
+      ) : (
+        <img
+          src={image.src}
+          alt=""
+          draggable={false}
+          className="absolute inset-0 w-screen h-screen"
+        />
+      )}
       <svg
         className="absolute inset-0 w-screen h-screen"
         viewBox={`0 0 ${frame.width} ${frame.height}`}
@@ -598,6 +644,7 @@ export const GrabView: React.FC = () => {
 
       {picked &&
         !typing &&
+        !frame.capture &&
         corners.map(([x, y], i) => (
           <span
             key={i}
@@ -616,7 +663,7 @@ export const GrabView: React.FC = () => {
           />
         ))}
 
-      {shown && (drag || picked) && (
+      {shown && (drag || picked) && !frame.capture && (
         <span
           className="absolute h-[22px] px-2 flex items-center rounded-md bg-[rgba(31,26,34,0.92)] text-white text-xs tabular-nums pointer-events-none"
           style={{
@@ -675,7 +722,11 @@ export const GrabView: React.FC = () => {
                 aria-hidden="true"
                 className="size-[3px] rounded-full bg-white/70"
               />
-              <span className="text-white/90">{t("ask.grab.marksHint")}</span>
+              <span className="text-white/90">
+                {frame.capture
+                  ? t("ask.grab.backHint")
+                  : t("ask.grab.marksHint")}
+              </span>
             </span>
           </div>
           <div
@@ -771,20 +822,32 @@ export const GrabView: React.FC = () => {
               <Keyboard size={18} strokeWidth={2} aria-hidden="true" />
             </button>
             {separator}
-            <button
-              type="button"
-              className="h-9 px-2.5 flex items-center gap-1.5 rounded-[9px] border border-line-strong bg-background hover:bg-wash cursor-pointer"
-              onClick={drop}
-            >
-              {t("ask.grab.drop")}
-              <kbd className={key}>{t("ask.grab.keyEsc")}</kbd>
-            </button>
+            {frame.capture ? (
+              <button
+                type="button"
+                className="h-9 px-2.5 flex items-center gap-1.5 rounded-[9px] border border-line-strong bg-background hover:bg-wash cursor-pointer"
+                onClick={() =>
+                  frame.capture && commands.removeAskCapture(frame.capture.n)
+                }
+              >
+                {t("ask.grab.takeOut")}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="h-9 px-2.5 flex items-center gap-1.5 rounded-[9px] border border-line-strong bg-background hover:bg-wash cursor-pointer"
+                onClick={drop}
+              >
+                {t("ask.grab.drop")}
+                <kbd className={key}>{t("ask.grab.keyEsc")}</kbd>
+              </button>
+            )}
             <button
               type="button"
               className="h-9 ml-1 px-2.5 flex items-center gap-1.5 rounded-[9px] border border-line-strong bg-background hover:bg-wash cursor-pointer"
               onClick={() => add(false)}
             >
-              {t("ask.grab.add")}
+              {frame.capture ? t("ask.grab.done") : t("ask.grab.add")}
               <kbd className={key}>{t("ask.grab.keyEnter")}</kbd>
             </button>
             <button
@@ -792,7 +855,9 @@ export const GrabView: React.FC = () => {
               className="h-9 ml-1 px-2.5 flex items-center gap-1.5 rounded-[9px] bg-background-ui text-white font-semibold cursor-pointer"
               onClick={() => add(true)}
             >
-              {t("ask.grab.addAndAsk")}
+              {frame.capture
+                ? t("ask.grab.doneAndAsk")
+                : t("ask.grab.addAndAsk")}
               <kbd className="font-[inherit] text-[10px] leading-3 px-[3px] rounded border border-white/50 border-b-2 bg-black/15 text-white">
                 {t("ask.grab.keyCtrlEnter")}
               </kbd>

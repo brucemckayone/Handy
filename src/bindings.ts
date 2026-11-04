@@ -1303,6 +1303,18 @@ async closeAskGrab() : Promise<void> {
     await TAURI_INVOKE("close_ask_grab");
 },
 /**
+ * A thumbnail on the pill was clicked: its picture opens to mark up again.
+ */
+async openAskCapture(n: number) : Promise<void> {
+    await TAURI_INVOKE("open_ask_capture", { n });
+},
+/**
+ * A picture is taken out of the question being asked.
+ */
+async removeAskCapture(n: number) : Promise<void> {
+    await TAURI_INVOKE("remove_ask_capture", { n });
+},
+/**
  * Recent threads, newest first.
  */
 async listAskThreads() : Promise<Result<ThreadListItem[], string>> {
@@ -1782,21 +1794,39 @@ text: string | null }
 export type Exchange = { question: Question; answer: Answer }
 export type GpuDeviceOption = { id: string; name: string; total_vram_mb: number }
 /**
+ * A picture already taken, opened from the pill to mark up again.
+ */
+export type GrabCapture = { 
+/**
+ * Its name in the question: Snap `n`.
+ */
+kind: CaptureKind; n: number; 
+/**
+ * Its size in pixels.
+ */
+width: number; height: number }
+/**
  * What the grab overlay shows; `None` once it closes.
  */
 export type GrabFrame = { 
 /**
- * The frozen screen, a BMP file for `convertFileSrc`.
+ * The frozen screen, a BMP file for `convertFileSrc`; or, marking up a
+ * capture again, its PNG.
  */
-path: string; width: number; height: number; windows: GrabWindow[]; 
+path: string; 
+/**
+ * The screen the overlay covers, in its pixels.
+ */
+width: number; height: number; windows: GrabWindow[]; 
 /**
  * The number the next mark gets: marks count on across the question.
  */
 first_mark: number; 
 /**
- * The window under the mouse, for a region that isn't a window.
+ * The window under the mouse, for a region that isn't a window; for a
+ * capture, the window it shows.
  */
-under_mouse: string }
+under_mouse: string; capture: GrabCapture | null }
 /**
  * A mark as drawn in the overlay.
  */

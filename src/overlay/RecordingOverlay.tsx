@@ -326,13 +326,16 @@ const RecordingOverlay: React.FC = () => {
                 { n: capture.n, of: capture.of },
               );
               return (
-                <img
+                <button
                   key={capture.n}
+                  type="button"
                   className="sask-thumb"
-                  src={capture.thumbnail}
-                  alt={name}
                   title={name}
-                />
+                  aria-label={t("ask.pill.markUp", { name })}
+                  onClick={() => commands.openAskCapture(capture.n)}
+                >
+                  <img src={capture.thumbnail} alt="" />
+                </button>
               );
             })}
             <button className="sask-send" onClick={() => commands.sendAsk()}>

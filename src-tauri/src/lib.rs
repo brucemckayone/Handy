@@ -913,6 +913,8 @@ pub fn run(mut cli_args: CliArgs) {
             ask::commands::get_ask_grab,
             ask::commands::finish_ask_grab,
             ask::commands::close_ask_grab,
+            ask::commands::open_ask_capture,
+            ask::commands::remove_ask_capture,
             ask::commands::list_ask_threads,
             ask::commands::get_ask_thread,
             ask::commands::ask_typed,

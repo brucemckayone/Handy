@@ -221,10 +221,21 @@
   width: 38px;
   height: 24px;
   flex: none;
-  object-fit: cover;
+  padding: 0;
+  overflow: hidden;
   border: 1px solid var(--s-border);
   border-radius: 5px;
   background: var(--s-hair);
+  cursor: pointer;
+}
+.sask-thumb img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+.sask-thumb:hover {
+  border-color: var(--s-accent);
 }
 .sask-send {
   height: 24px;

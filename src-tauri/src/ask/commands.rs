@@ -76,6 +76,20 @@ pub fn close_ask_grab(app: AppHandle) {
     super::grab::close(&app);
 }
 
+/// A thumbnail on the pill was clicked: its picture opens to mark up again.
+#[tauri::command]
+#[specta::specta]
+pub fn open_ask_capture(app: AppHandle, n: u32) {
+    std::thread::spawn(move || super::grab::open_capture(&app, n));
+}
+
+/// A picture is taken out of the question being asked.
+#[tauri::command]
+#[specta::specta]
+pub fn remove_ask_capture(app: AppHandle, n: u32) {
+    super::grab::take_out(&app, n);
+}
+
 /// Recent threads, newest first.
 #[tauri::command]
 #[specta::specta]

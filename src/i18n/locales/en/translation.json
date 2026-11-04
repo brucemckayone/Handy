@@ -1320,6 +1320,7 @@
       "snap": "snap",
       "handsFree": "hands-free",
       "escAgain": "Esc again to cancel",
+      "markUp": "{{name}}. Click to mark up or take out",
       "send": "Send",
       "grabN": "Grab {{n}}: {{of}}",
       "snapN": "Snap {{n}}: {{of}}"
@@ -1337,6 +1338,10 @@
       "keyEnter": "Enter",
       "keyCtrlEnter": "Ctrl+Enter",
       "marksHint": "Each mark gets the next number and the moment you drew it",
+      "backHint": "Esc leaves it as it was",
+      "takeOut": "Take out",
+      "done": "Done",
+      "doneAndAsk": "Done and ask",
       "withKey": "{{name}} ({{key}})",
       "tools": {
         "arrow": "Arrow",

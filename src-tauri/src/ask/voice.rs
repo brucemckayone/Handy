@@ -16,7 +16,7 @@ use tauri::{AppHandle, Manager};
 use tauri_specta::Event as _;
 
 use super::agents::{self, Agent};
-use super::capture::{Capture, CaptureView};
+use super::capture::{Capture, CaptureKind, CaptureView};
 use super::prompt::{Picture, ScreenContext};
 use super::store::Via;
 use super::timeline::{Event, Spoken, Timeline, What};
@@ -149,26 +149,90 @@ pub fn add_capture(app: &AppHandle, mut capture: Capture) {
         let _ = std::fs::remove_file(&capture.path);
         return;
     };
-    capture.n = pending.captures.len() as u32 + 1;
+    // Numbers are never reused, even after one is taken out.
+    capture.n = pending.captures.last().map_or(0, |c| c.n) + 1;
     capture.at = pending.started.elapsed().as_millis() as u64;
-    let name = capture.name();
-    for (ago, what) in &mut capture.marks {
-        // From "this long before it was added" to the Ask clock.
-        *ago = capture.at.saturating_sub(*ago);
-        if let What::Mark { on, .. } = what {
-            *on = name.clone();
-        }
-    }
+    let marks = std::mem::take(&mut capture.marks);
+    capture.marks = on_clock(marks, capture.at, &capture.name());
     pending.captures.push(capture);
     show(app, slot.as_ref());
 }
 
-/// How many marks the question has so far, across its grabs.
+/// Marks timed "this long before the picture was added at `added`", on the
+/// Ask clock and on the picture called `name`.
+fn on_clock(marks: Vec<(u64, What)>, added: u64, name: &str) -> Vec<(u64, What)> {
+    marks
+        .into_iter()
+        .map(|(ago, mut what)| {
+            if let What::Mark { on, .. } = &mut what {
+                *on = name.to_string();
+            }
+            (added.saturating_sub(ago), what)
+        })
+        .collect()
+}
+
+/// The highest mark number so far, across the question's pictures: the next
+/// mark gets the one after. Numbers drawn into a picture are never reused.
 pub fn marks_so_far() -> u32 {
     PENDING.lock().ok().map_or(0, |slot| {
-        slot.as_ref()
-            .map_or(0, |p| p.captures.iter().map(|c| c.marks.len() as u32).sum())
+        slot.as_ref().map_or(0, |p| {
+            p.captures
+                .iter()
+                .flat_map(|c| &c.marks)
+                .filter_map(|(_, what)| match what {
+                    What::Mark { n, .. } => Some(*n),
+                    _ => None,
+                })
+                .max()
+                .unwrap_or(0)
+        })
     })
+}
+
+/// Capture `n`, to mark it up again: its kind, picture and what it shows.
+pub fn capture(n: u32) -> Option<(CaptureKind, PathBuf, String)> {
+    let slot = PENDING.lock().ok()?;
+    let capture = slot.as_ref()?.captures.iter().find(|c| c.n == n)?;
+    Some((capture.kind, capture.path.clone(), capture.of.clone()))
+}
+
+/// Capture `n` was marked up again: its picture becomes `path` and the new
+/// marks join its old ones.
+pub fn marked_up(
+    app: &AppHandle,
+    n: u32,
+    path: PathBuf,
+    thumbnail: String,
+    marks: Vec<(u64, What)>,
+) {
+    let Ok(mut slot) = PENDING.lock() else { return };
+    let Some(pending) = slot.as_mut() else {
+        let _ = std::fs::remove_file(&path);
+        return;
+    };
+    let now = pending.started.elapsed().as_millis() as u64;
+    let Some(capture) = pending.captures.iter_mut().find(|c| c.n == n) else {
+        let _ = std::fs::remove_file(&path);
+        return;
+    };
+    let name = capture.name();
+    capture.marks.extend(on_clock(marks, now, &name));
+    let old = std::mem::replace(&mut capture.path, path);
+    let _ = std::fs::remove_file(old);
+    capture.thumbnail = thumbnail;
+    show(app, slot.as_ref());
+}
+
+/// Capture `n` is taken out of the question.
+pub fn remove_capture(app: &AppHandle, n: u32) {
+    let Ok(mut slot) = PENDING.lock() else { return };
+    let Some(pending) = slot.as_mut() else { return };
+    if let Some(i) = pending.captures.iter().position(|c| c.n == n) {
+        let capture = pending.captures.remove(i);
+        let _ = std::fs::remove_file(capture.path);
+        show(app, slot.as_ref());
+    }
 }
 
 /// Esc while asking. With nothing taken it cancels at once; with grabs or
@@ -363,6 +427,26 @@ pub fn released(app: &AppHandle, text: String, audio: Option<AskAudio>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn marks_go_on_the_ask_clock_and_their_picture() {
+        let mark = What::Mark {
+            n: 1,
+            kind: super::super::timeline::MarkKind::Pen,
+            on: String::new(),
+            region: None,
+            joins: None,
+            encloses: None,
+            label: None,
+        };
+        let early = What::Window {
+            label: "Terminal".into(),
+        };
+        let timed = on_clock(vec![(1_500, mark), (9_000, early)], 4_000, "Grab 2");
+        assert_eq!(timed[0].0, 2_500);
+        assert!(matches!(&timed[0].1, What::Mark { on, .. } if on == "Grab 2"));
+        assert_eq!(timed[1].0, 0, "never before the question began");
+    }
 
     #[test]
     fn keycaps_show_the_last_key_of_a_binding() {

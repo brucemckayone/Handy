@@ -270,6 +270,14 @@ pub fn save_png_bytes(png: &[u8]) -> Option<PathBuf> {
     Some(path)
 }
 
+/// A PNG's size, from its header: a capture marked up again is shown at it.
+pub fn png_size(path: &Path) -> Option<(u32, u32)> {
+    let file = std::io::BufReader::new(std::fs::File::open(path).ok()?);
+    let reader = png::Decoder::new(file).read_info().ok()?;
+    let info = reader.info();
+    Some((info.width, info.height))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -324,6 +332,20 @@ mod tests {
     #[test]
     fn only_pngs_are_saved_as_pngs() {
         assert!(save_png_bytes(b"not a picture").is_none());
+    }
+
+    #[test]
+    fn png_sizes_come_from_the_header() {
+        let mut png = Vec::new();
+        let image = Image {
+            width: 5,
+            height: 3,
+            rgb: vec![9; 45],
+        };
+        write_png(&image, &mut png).unwrap();
+        let path = save_png_bytes(&png).expect("saved");
+        assert_eq!(png_size(&path), Some((5, 3)));
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]

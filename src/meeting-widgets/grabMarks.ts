@@ -64,6 +64,18 @@ export const fromPoints = (a: Point, b: Point): Rect => ({
   height: Math.abs(a.y - b.y),
 });
 
+/** `width` × `height`, scaled down (never up) to fit `area` and centred
+ * in it. */
+export const fit = (width: number, height: number, area: Rect): Rect => {
+  const k = Math.min(1, area.width / width, area.height / height);
+  return {
+    x: area.x + (area.width - width * k) / 2,
+    y: area.y + (area.height - height * k) / 2,
+    width: width * k,
+    height: height * k,
+  };
+};
+
 export const inside = (p: Point, r: Rect, pad = 0) =>
   p.x >= r.x - pad &&
   p.x <= r.x + r.width + pad &&

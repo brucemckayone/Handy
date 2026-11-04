@@ -28,18 +28,33 @@ pub struct GrabWindow {
     pub label: String,
 }
 
+/// A picture already taken, opened from the pill to mark up again.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Type)]
+pub struct GrabCapture {
+    /// Its name in the question: Snap `n`.
+    pub kind: CaptureKind,
+    pub n: u32,
+    /// Its size in pixels.
+    pub width: u32,
+    pub height: u32,
+}
+
 /// What the grab overlay shows; `None` once it closes.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Type)]
 pub struct GrabFrame {
-    /// The frozen screen, a BMP file for `convertFileSrc`.
+    /// The frozen screen, a BMP file for `convertFileSrc`; or, marking up a
+    /// capture again, its PNG.
     pub path: String,
+    /// The screen the overlay covers, in its pixels.
     pub width: u32,
     pub height: u32,
     pub windows: Vec<GrabWindow>,
     /// The number the next mark gets: marks count on across the question.
     pub first_mark: u32,
-    /// The window under the mouse, for a region that isn't a window.
+    /// The window under the mouse, for a region that isn't a window; for a
+    /// capture, the window it shows.
     pub under_mouse: String,
+    pub capture: Option<GrabCapture>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type, tauri_specta::Event)]
@@ -170,22 +185,26 @@ pub fn frame() -> Option<GrabFrame> {
     OPEN.lock().ok().and_then(|open| open.clone())
 }
 
+/// The screen under the mouse: where it starts and its size.
+fn screen_under_mouse(app: &AppHandle) -> Option<(PhysicalPosition<i32>, PhysicalSize<u32>)> {
+    let monitor = app
+        .cursor_position()
+        .ok()
+        .and_then(|at| app.monitor_from_point(at.x, at.y).ok().flatten())
+        .or_else(|| app.primary_monitor().ok().flatten())?;
+    Some((*monitor.position(), *monitor.size()))
+}
+
 /// Freezes the screen under the mouse and opens the overlay on it. Call off
 /// the main thread: copying a 4K screen takes a moment.
 pub fn open(app: &AppHandle) {
     if is_open() {
         return;
     }
-    let Some(monitor) = app
-        .cursor_position()
-        .ok()
-        .and_then(|at| app.monitor_from_point(at.x, at.y).ok().flatten())
-        .or_else(|| app.primary_monitor().ok().flatten())
-    else {
+    let Some((origin, size)) = screen_under_mouse(app) else {
         warn!("Ask: no screen to grab");
         return;
     };
-    let (origin, size) = (*monitor.position(), *monitor.size());
     let Some(screen) =
         screenshot::copy_screen(origin.x, origin.y, size.width as i32, size.height as i32)
     else {
@@ -203,7 +222,51 @@ pub fn open(app: &AppHandle) {
         windows: windows_on(origin.x, origin.y, screen.width, screen.height),
         first_mark: voice::marks_so_far() + 1,
         under_mouse,
+        capture: None,
     };
+    present(app, frame, origin, size);
+}
+
+/// Opens capture `n` (from the pill) in the overlay, to mark it up again or
+/// take it out of the question.
+pub fn open_capture(app: &AppHandle, n: u32) {
+    if is_open() {
+        return;
+    }
+    let Some((kind, path, of)) = voice::capture(n) else {
+        return;
+    };
+    let Some((width, height)) = screenshot::png_size(&path) else {
+        warn!("Ask: couldn't read capture {n} to mark it up");
+        return;
+    };
+    let Some((origin, size)) = screen_under_mouse(app) else {
+        return;
+    };
+    let frame = GrabFrame {
+        path: path.to_string_lossy().into_owned(),
+        width: size.width,
+        height: size.height,
+        windows: Vec::new(),
+        first_mark: voice::marks_so_far() + 1,
+        under_mouse: of,
+        capture: Some(GrabCapture {
+            kind,
+            n,
+            width,
+            height,
+        }),
+    };
+    present(app, frame, origin, size);
+}
+
+/// Shows `frame` in the overlay, covering the screen at `origin`.
+fn present(
+    app: &AppHandle,
+    frame: GrabFrame,
+    origin: PhysicalPosition<i32>,
+    size: PhysicalSize<u32>,
+) {
     if let Ok(mut open) = OPEN.lock() {
         *open = Some(frame.clone());
     }
@@ -223,11 +286,14 @@ pub fn open(app: &AppHandle) {
     });
 }
 
-/// Closes the overlay; what it showed is deleted.
+/// Closes the overlay. A frozen screen is deleted; a capture being marked
+/// up again stays with the question.
 pub fn close(app: &AppHandle) {
     let frame = OPEN.lock().ok().and_then(|mut open| open.take());
     let Some(frame) = frame else { return };
-    let _ = std::fs::remove_file(&frame.path);
+    if frame.capture.is_none() {
+        let _ = std::fs::remove_file(&frame.path);
+    }
     let _ = AskGrabEvent { frame: None }.emit_to(app, LABEL);
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
@@ -243,41 +309,55 @@ pub fn escape(app: &AppHandle) {
     let _ = AskGrabEscapeEvent {}.emit_to(app, LABEL);
 }
 
-/// The overlay is done with a grab: it joins the question.
+/// The overlay is done with a grab: it joins the question. A capture marked
+/// up again takes the new picture and marks in its place.
 pub fn finish(app: &AppHandle, result: GrabResult) -> Result<(), String> {
     use base64::Engine as _;
     let png = base64::engine::general_purpose::STANDARD
         .decode(result.png.as_bytes())
         .map_err(|e| format!("not base64: {e}"))?;
     let path: PathBuf = screenshot::save_png_bytes(&png).ok_or("couldn't save the grab")?;
+    let again = frame().and_then(|f| f.capture).map(|c| c.n);
     close(app);
     debug!(
         "Ask: grab of {} with {} marks",
         result.of,
         result.marks.len()
     );
-    voice::add_capture(
-        app,
-        Capture {
-            kind: CaptureKind::Grab,
-            n: 0,
-            of: result.of,
-            path,
-            thumbnail: result.thumbnail,
-            at: 0,
-            marks: result
-                .marks
-                .iter()
-                .map(|m| (u64::from(m.ago_ms), m.what()))
-                .collect(),
-        },
-    );
+    let marks = result
+        .marks
+        .iter()
+        .map(|m| (u64::from(m.ago_ms), m.what()))
+        .collect();
+    match again {
+        Some(n) => voice::marked_up(app, n, path, result.thumbnail, marks),
+        None => voice::add_capture(
+            app,
+            Capture {
+                kind: CaptureKind::Grab,
+                n: 0,
+                of: result.of,
+                path,
+                thumbnail: result.thumbnail,
+                at: 0,
+                marks,
+            },
+        ),
+    }
     if result.ask_now {
         if let Some(coordinator) = app.try_state::<crate::TranscriptionCoordinator>() {
             coordinator.finish("ask", "grab");
         }
     }
     Ok(())
+}
+
+/// Takes capture `n` out of the question, closing the overlay if it shows it.
+pub fn take_out(app: &AppHandle, n: u32) {
+    if frame().and_then(|f| f.capture).is_some_and(|c| c.n == n) {
+        close(app);
+    }
+    voice::remove_capture(app, n);
 }
 
 /// Puts the overlay above every other window, always-on-top ones included

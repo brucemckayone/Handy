@@ -6,6 +6,7 @@ import {
   ChevronDown,
   Copy,
   FileText,
+  Files,
   Folder,
   GitMerge,
   Image,
@@ -24,11 +25,14 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import {
   commands,
   events,
   type Answer,
+  type ContextNote,
   type Exchange,
+  type QuestionPicture,
   type Thread,
   type ThreadListItem,
 } from "@/bindings";
@@ -474,6 +478,8 @@ const ExchangeView: React.FC<{
   const { t } = useTranslation();
   const { question, answer } = exchange;
   const context = question.context;
+  const pictures = question.pictures ?? [];
+  const [shown, setShown] = useState<QuestionPicture | null>(null);
   return (
     <>
       <div className="flex flex-col items-end gap-1">
@@ -484,8 +490,41 @@ const ExchangeView: React.FC<{
           {t(`ask.panel.via.${question.via}`)}
         </span>
         <div className="max-w-[290px] px-3 py-2 rounded-xl rounded-ee-sm bg-logo-primary/20 whitespace-pre-wrap break-words">
-          {question.text}
+          {question.marked ? (
+            <MarkedText text={question.marked} />
+          ) : (
+            question.text
+          )}
         </div>
+        {pictures.length > 0 && (
+          <div className="flex flex-wrap justify-end gap-1.5">
+            {pictures.map((picture) => {
+              const name = t("ask.panel.pictureOf", {
+                name: picture.name,
+                of: picture.of,
+              });
+              return (
+                <button
+                  key={picture.path}
+                  type="button"
+                  title={name}
+                  aria-label={t("ask.panel.showPicture", { name })}
+                  onClick={() => setShown(picture)}
+                  className="h-12 max-w-[120px] overflow-hidden rounded-md border border-line bg-wash hover:border-background-ui transition-colors cursor-pointer"
+                >
+                  <img
+                    src={convertFileSrc(picture.path)}
+                    alt=""
+                    className="h-full w-auto object-cover"
+                  />
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {shown && (
+          <PictureView picture={shown} onClose={() => setShown(null)} />
+        )}
         {context && (
           <div className="flex flex-wrap justify-end gap-1">
             {context.selection_lines != null && (
@@ -517,6 +556,28 @@ const ExchangeView: React.FC<{
                 {t("ask.panel.agent", { name: context.agent })}
               </ContextChip>
             )}
+            {(context.grabs > 0 || context.snaps > 0) && (
+              <ContextChip icon={Image}>
+                {picturesLabel(t, context)}
+              </ContextChip>
+            )}
+            {context.window_text_lines != null && (
+              <ContextChip icon={AppWindow}>
+                {t("ask.panel.chips.windowText", {
+                  count: context.window_text_lines,
+                })}
+              </ContextChip>
+            )}
+            {context.shells?.length > 0 && (
+              <ContextChip icon={SquareTerminal}>
+                {[...new Set(context.shells)].join(", ")}
+              </ContextChip>
+            )}
+            {context.files > 0 && (
+              <ContextChip icon={Files}>
+                {t("ask.panel.chips.files", { count: context.files })}
+              </ContextChip>
+            )}
           </div>
         )}
       </div>
@@ -529,6 +590,78 @@ const ExchangeView: React.FC<{
         speaking={speaking}
       />
     </>
+  );
+};
+
+/** "1 grab, 1 snap · 3 marks". */
+const picturesLabel = (
+  t: ReturnType<typeof useTranslation>["t"],
+  context: ContextNote,
+) => {
+  const taken = [
+    context.grabs > 0 && t("ask.panel.chips.grabs", { count: context.grabs }),
+    context.snaps > 0 && t("ask.panel.chips.snaps", { count: context.snaps }),
+  ].filter(Boolean);
+  const marks =
+    context.marks > 0 && t("ask.panel.chips.marks", { count: context.marks });
+  return [taken.join(", "), marks].filter(Boolean).join(" · ");
+};
+
+/** The question's words, each mark's number where it was drawn. */
+const MarkedText: React.FC<{ text: string }> = ({ text }) => (
+  <>
+    {text.split(/(\[\d+\])/).map((part, i) => {
+      const n = /^\[(\d+)\]$/.exec(part);
+      return n ? (
+        <span
+          key={i}
+          className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-[5px] bg-background-ui text-white text-[11px] font-bold leading-none align-[1px]"
+        >
+          {n[1]}
+        </span>
+      ) : (
+        <React.Fragment key={i}>{part}</React.Fragment>
+      );
+    })}
+  </>
+);
+
+/** A question's grab or snap at full size, over the panel; a click or Esc
+ * closes it. */
+const PictureView: React.FC<{
+  picture: QuestionPicture;
+  onClose: () => void;
+}> = ({ picture, onClose }) => {
+  const { t } = useTranslation();
+  useEffect(() => {
+    // Ahead of the panel's own Esc, which would close the panel.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopImmediatePropagation();
+      onClose();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
+  return (
+    <div
+      role="dialog"
+      aria-label={t("ask.panel.pictureOf", {
+        name: picture.name,
+        of: picture.of,
+      })}
+      className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-2 p-4 bg-black/75 cursor-zoom-out"
+      onClick={onClose}
+    >
+      <img
+        src={convertFileSrc(picture.path)}
+        alt=""
+        className="max-w-full max-h-[calc(100%-32px)] rounded-md shadow-lg"
+      />
+      <span className="text-xs text-white/85">
+        {t("ask.panel.pictureOf", { name: picture.name, of: picture.of })}
+      </span>
+    </div>
   );
 };
 

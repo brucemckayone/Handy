@@ -34,7 +34,7 @@ use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::hash::{BuildHasher, Hasher};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -42,12 +42,13 @@ use tauri::{AppHandle, Manager};
 use tauri_specta::Event;
 
 use crate::settings::get_settings;
+use capture::CaptureKind;
 use claude::{Line, RunError, Session};
 use prompt::ScreenContext;
 use speaker::Speaker;
 use store::{
     AgentLink, Answer, AnswerStatus, AskError, AskErrorCode, AskStore, ContextNote, Exchange,
-    MergeSuggestion, Question, Thread, ThreadListItem, Via, WindowKey,
+    MergeSuggestion, Question, QuestionPicture, Thread, ThreadListItem, Via, WindowKey,
 };
 
 /// The panel's window label.
@@ -107,6 +108,8 @@ pub struct NewQuestion {
     pub screen: ScreenContext,
     /// Send this instead of building the prompt (a moved question).
     pub prompt: Option<String>,
+    /// The question being moved: its pictures, marks and notes go along.
+    pub moved: Option<Question>,
 }
 
 impl NewQuestion {
@@ -121,6 +124,7 @@ impl NewQuestion {
             agent: None,
             screen: ScreenContext::default(),
             prompt: None,
+            moved: None,
         }
     }
 }
@@ -130,6 +134,8 @@ pub struct AskManager {
     store: AskStore,
     /// Handy's own threads run here, apart from every project.
     workspace: PathBuf,
+    /// Grabs and snaps, kept with their threads.
+    pictures: PathBuf,
     /// Bumped by every question and cancel: older runs stop.
     generation: AtomicU64,
     answering: AtomicBool,
@@ -144,6 +150,32 @@ fn now_ms() -> i64 {
 }
 
 /// A random version-4 UUID, as Claude Code's `--session-id` wants.
+/// Deletes a kept picture, and its question's folder once that is empty.
+fn forget_picture(path: &Path) {
+    let _ = std::fs::remove_file(path);
+    if let Some(dir) = path.parent() {
+        // Fails while other pictures are still in it.
+        let _ = std::fs::remove_dir(dir);
+    }
+}
+
+/// Deletes every picture under `dir` that isn't one of `kept`.
+fn sweep(dir: &Path, kept: &[PathBuf]) {
+    let Ok(folders) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for folder in folders.flatten() {
+        let Ok(files) = std::fs::read_dir(folder.path()) else {
+            continue;
+        };
+        for file in files.flatten() {
+            if !kept.contains(&file.path()) {
+                forget_picture(&file.path());
+            }
+        }
+    }
+}
+
 pub fn new_uuid() -> String {
     // std's hasher keys are random per process; mixing in time and a counter
     // makes every value differ.
@@ -194,6 +226,9 @@ fn note_for(question: &NewQuestion) -> ContextNote {
         text.as_ref()
             .map(|t| t.trim().lines().count().max(1) as u32)
     };
+    let count = |kind: fn(&prompt::Picture) -> bool| {
+        question.screen.pictures.iter().filter(|p| kind(p)).count() as u32
+    };
     ContextNote {
         selection_lines: lines(&question.screen.selection),
         input_lines: lines(&question.screen.input),
@@ -204,6 +239,26 @@ fn note_for(question: &NewQuestion) -> ContextNote {
             .as_ref()
             .filter(|a| a.linked)
             .map(|a| a.name.clone()),
+        grabs: count(|p| p.kind == CaptureKind::Grab),
+        snaps: count(|p| p.kind == CaptureKind::Snap),
+        marks: question.screen.timeline.as_ref().map_or(0, |t| {
+            t.events
+                .iter()
+                .filter(|e| matches!(e.what, timeline::What::Mark { .. }))
+                .count() as u32
+        }),
+        window_text_lines: question
+            .screen
+            .window_text
+            .as_ref()
+            .map(|w| w.text.trim().lines().count().max(1) as u32),
+        shells: question
+            .screen
+            .terminal
+            .as_ref()
+            .map(|t| t.shells.clone())
+            .unwrap_or_default(),
+        files: question.screen.files.len() as u32,
     }
 }
 
@@ -214,12 +269,23 @@ impl AskManager {
         std::fs::create_dir_all(&workspace)?;
         let store = AskStore::open(&app_data.join("asks.db"))?;
         // Screenshots left by questions that never got asked (cancelled, or
-        // Handy closed) go now.
+        // Handy closed) go now, as do pictures no thread holds any more.
         let _ = std::fs::remove_dir_all(screenshot::dir());
+        let pictures = app_data.join("ask-pictures");
+        if let Ok(threads) = store.all() {
+            let kept: Vec<PathBuf> = threads
+                .iter()
+                .flat_map(|t| &t.exchanges)
+                .flat_map(|e| &e.question.pictures)
+                .map(|p| PathBuf::from(&p.path))
+                .collect();
+            sweep(&pictures, &kept);
+        }
         Ok(Self {
             app: app.clone(),
             store,
             workspace,
+            pictures,
             generation: AtomicU64::new(0),
             answering: AtomicBool::new(false),
             last_activity: AtomicI64::new(0),
@@ -240,15 +306,44 @@ impl AskManager {
         self.generation.fetch_add(1, Ordering::AcqRel);
     }
 
-    /// Deletes a thread and the Claude Code sessions Handy made for it.
+    /// Deletes a thread, its pictures and the Claude Code sessions Handy
+    /// made for it.
     pub fn delete(&self, id: &str) -> Result<()> {
-        if let (Some(thread), Some(claude_dir)) = (self.store.delete(id)?, expiry::claude_dir()) {
-            for session in &thread.sessions {
-                expiry::delete_session(&claude_dir, &self.workspace, session);
+        if let Some(thread) = self.store.delete(id)? {
+            if let Some(claude_dir) = expiry::claude_dir() {
+                for session in &thread.sessions {
+                    expiry::delete_session(&claude_dir, &self.workspace, session);
+                }
+            }
+            for picture in thread.exchanges.iter().flat_map(|e| &e.question.pictures) {
+                forget_picture(Path::new(&picture.path));
             }
         }
         self.deleted(id);
         Ok(())
+    }
+
+    /// Moves the question's pictures in with the thread's, so they last as
+    /// long as it does.
+    fn keep(&self, question_id: &str, pictures: &[prompt::Picture]) -> Vec<QuestionPicture> {
+        let dir = self.pictures.join(question_id);
+        if !pictures.is_empty() && std::fs::create_dir_all(&dir).is_err() {
+            return Vec::new();
+        }
+        pictures
+            .iter()
+            .filter_map(|picture| {
+                let to = dir.join(format!("{}.png", picture.name.replace(' ', "-")));
+                let moved = std::fs::rename(&picture.path, &to).is_ok()
+                    || (std::fs::copy(&picture.path, &to).is_ok()
+                        && std::fs::remove_file(&picture.path).is_ok());
+                moved.then(|| QuestionPicture {
+                    name: picture.name.clone(),
+                    of: picture.of.clone(),
+                    path: to.display().to_string(),
+                })
+            })
+            .collect()
     }
 
     fn deleted(&self, id: &str) {
@@ -450,10 +545,10 @@ impl AskManager {
             Some(t) => self.changed(&t),
             None => {}
         }
-        self.ask(NewQuestion {
-            prompt: question.prompt,
-            ..NewQuestion::text(question.text, question.via, to)
-        })
+        let mut again = NewQuestion::text(question.text.clone(), question.via, to);
+        again.prompt = question.prompt.clone();
+        again.moved = Some(question);
+        self.ask(again)
     }
 
     fn changed(&self, thread: &Thread) {
@@ -522,14 +617,40 @@ impl AskManager {
             .clone()
             .unwrap_or_else(|| prompt::build(&text, &question.screen));
         thread.last_used = now;
+        let question_id = new_uuid();
+        let (pictures, marked, context) = match &question.moved {
+            Some(moved) => (
+                moved.pictures.clone(),
+                moved.marked.clone(),
+                moved.context.clone(),
+            ),
+            None => (
+                self.keep(&question_id, &question.screen.pictures),
+                question
+                    .screen
+                    .timeline
+                    .as_ref()
+                    .and_then(|t| timeline::marked(&t.words, &t.events)),
+                note_for(&question),
+            ),
+        };
+        let images: Vec<PathBuf> = question
+            .screen
+            .screenshot
+            .iter()
+            .cloned()
+            .chain(pictures.iter().map(|p| PathBuf::from(&p.path)))
+            .collect();
         thread.exchanges.push(Exchange {
             question: Question {
-                id: new_uuid(),
+                id: question_id,
                 text: text.clone(),
                 via: question.via,
                 at: now,
-                context: note_for(&question),
+                context,
                 prompt: Some(prompt.clone()),
+                pictures,
+                marked,
             },
             answer: Answer {
                 id: answer_id.clone(),
@@ -574,13 +695,7 @@ impl AskManager {
         add_dirs.dedup();
         let request = claude::Request {
             prompt,
-            images: question
-                .screen
-                .screenshot
-                .iter()
-                .chain(question.screen.pictures.iter().map(|p| &p.path))
-                .cloned()
-                .collect(),
+            images,
             session,
             model,
             cwd: self.workspace.clone(),
@@ -589,13 +704,15 @@ impl AskManager {
 
         let manager = Arc::clone(self);
         let thread_id = thread.id.clone();
-        let pictures = request.images.clone();
+        // The window's screenshot goes once answered; grabs and snaps stay
+        // with the thread.
+        let screenshot = question.screen.screenshot.clone();
         let read_aloud = settings.read_aloud;
         std::thread::Builder::new()
             .name("ask".into())
             .spawn(move || {
                 manager.answer(&thread_id, &answer_id, request, generation, read_aloud);
-                for path in pictures {
+                if let Some(path) = screenshot {
                     let _ = std::fs::remove_file(path);
                 }
             })?;
@@ -756,6 +873,27 @@ pub fn ask(app: &AppHandle, question: NewQuestion) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sweeping_keeps_only_pictures_a_thread_holds() {
+        let root = std::env::temp_dir().join(format!("handy-sweep-{}", new_uuid()));
+        let (kept, gone, lone) = (root.join("q1"), root.join("q1"), root.join("q2"));
+        std::fs::create_dir_all(&kept).unwrap();
+        std::fs::create_dir_all(&lone).unwrap();
+        let keep = kept.join("Grab-1.png");
+        let drop = gone.join("Snap-2.png");
+        let orphan = lone.join("Grab-1.png");
+        for file in [&keep, &drop, &orphan] {
+            std::fs::write(file, b"png").unwrap();
+        }
+        sweep(&root, std::slice::from_ref(&keep));
+        assert!(keep.exists());
+        assert!(!drop.exists() && !orphan.exists());
+        assert!(!lone.exists(), "an emptied question folder goes too");
+        forget_picture(&keep);
+        assert!(!kept.exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn uuids_look_right_and_differ() {

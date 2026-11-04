@@ -1779,7 +1779,23 @@ read_aloud: boolean;
 /**
  * The running agent whose conversation was copied.
  */
-agent: string | null }
+agent: string | null; 
+/**
+ * Grabs and snaps that went with it, and the marks drawn on them.
+ */
+grabs: number; snaps: number; marks: number; 
+/**
+ * The window's text went too, this many lines of it.
+ */
+window_text_lines: number | null; 
+/**
+ * The shells open in the terminal it was asked from.
+ */
+shells: string[]; 
+/**
+ * Files selected in File Explorer.
+ */
+files: number }
 export type CustomSounds = { start: boolean; stop: boolean }
 export type Decision = { text: string; at_ms: number | null }
 /**
@@ -2163,7 +2179,24 @@ export type Question = { id: string; text: string; via: Via; at: number; context
  * Everything sent to Claude Code, screen context included, so a
  * question moved to another thread can be asked there the same way.
  */
-prompt?: string | null }
+prompt?: string | null; pictures?: QuestionPicture[]; 
+/**
+ * The question with the marks' numbers where they were drawn, e.g.
+ * "why does it jump here [1] but not here [2]?".
+ */
+marked?: string | null }
+/**
+ * A grab or snap that went with a question, kept with its thread.
+ */
+export type QuestionPicture = { 
+/**
+ * "Grab 1".
+ */
+name: string; 
+/**
+ * The window it shows.
+ */
+of: string; path: string }
 /**
  * The meeting being recorded, for the tray, the pill and the Meetings page.
  */

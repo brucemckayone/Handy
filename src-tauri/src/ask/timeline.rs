@@ -255,6 +255,17 @@ pub fn question(words: &[Spoken], events: &[Event]) -> String {
     parts.join(" ")
 }
 
+/// The question with only the marks' numbers in it, for showing: `None`
+/// when no words were timed or nothing was drawn.
+pub fn marked(words: &[Spoken], events: &[Event]) -> Option<String> {
+    let marks: Vec<Event> = events
+        .iter()
+        .filter(|e| matches!(e.what, What::Mark { .. }))
+        .cloned()
+        .collect();
+    (!words.is_empty() && !marks.is_empty()).then(|| question(words, &marks))
+}
+
 /// One line per mark: what it is, where, and what it encloses.
 pub fn marks(events: &[Event]) -> Vec<String> {
     events
@@ -416,6 +427,19 @@ mod tests {
                 },
             },
         ]
+    }
+
+    #[test]
+    fn the_shown_question_carries_only_the_marks() {
+        assert_eq!(
+            marked(&spoken(), &circles_and_a_log_line()).as_deref(),
+            Some(
+                "Can I ask you about what happens when this [1] talks to this [2] [3]? \
+                 And then why does the log say this?"
+            )
+        );
+        assert_eq!(marked(&[], &circles_and_a_log_line()), None);
+        assert_eq!(marked(&spoken(), &circles_and_a_log_line()[3..]), None);
     }
 
     #[test]

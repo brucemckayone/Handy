@@ -58,6 +58,26 @@ pub struct ContextNote {
     pub read_aloud: bool,
     /// The running agent whose conversation was copied.
     pub agent: Option<String>,
+    /// Grabs and snaps that went with it, and the marks drawn on them.
+    pub grabs: u32,
+    pub snaps: u32,
+    pub marks: u32,
+    /// The window's text went too, this many lines of it.
+    pub window_text_lines: Option<u32>,
+    /// The shells open in the terminal it was asked from.
+    pub shells: Vec<String>,
+    /// Files selected in File Explorer.
+    pub files: u32,
+}
+
+/// A grab or snap that went with a question, kept with its thread.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Type)]
+pub struct QuestionPicture {
+    /// "Grab 1".
+    pub name: String,
+    /// The window it shows.
+    pub of: String,
+    pub path: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Type)]
@@ -72,6 +92,12 @@ pub struct Question {
     /// question moved to another thread can be asked there the same way.
     #[serde(default)]
     pub prompt: Option<String>,
+    #[serde(default)]
+    pub pictures: Vec<QuestionPicture>,
+    /// The question with the marks' numbers where they were drawn, e.g.
+    /// "why does it jump here [1] but not here [2]?".
+    #[serde(default)]
+    pub marked: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Type)]
@@ -324,6 +350,8 @@ mod tests {
                         ..Default::default()
                     },
                     prompt: None,
+                    pictures: Vec::new(),
+                    marked: None,
                 },
                 answer: Answer {
                     id: "a1".into(),

@@ -154,6 +154,8 @@ mod tests {
                 at: 0,
                 context: Default::default(),
                 prompt: None,
+                pictures: Vec::new(),
+                marked: None,
             },
             answer: super::super::store::Answer {
                 id: "a".into(),

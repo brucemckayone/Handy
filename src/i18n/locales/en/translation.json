@@ -1438,8 +1438,20 @@
         "screenshot": "Screenshot",
         "readAloud": "Read aloud earlier",
         "input_one": "Piped input · 1 line",
-        "input_other": "Piped input · {{count}} lines"
+        "input_other": "Piped input · {{count}} lines",
+        "grabs_one": "1 grab",
+        "grabs_other": "{{count}} grabs",
+        "snaps_one": "1 snap",
+        "snaps_other": "{{count}} snaps",
+        "marks_one": "1 mark",
+        "marks_other": "{{count}} marks",
+        "windowText_one": "Window text · 1 line",
+        "windowText_other": "Window text · {{count}} lines",
+        "files_one": "1 file",
+        "files_other": "{{count}} files"
       },
+      "pictureOf": "{{name}} · {{of}}",
+      "showPicture": "{{name}}. Click to see it full size",
       "firstWords": "{{model}} · first words in {{seconds}} s",
       "firstWordsNoModel": "First words in {{seconds}} s",
       "errors": {

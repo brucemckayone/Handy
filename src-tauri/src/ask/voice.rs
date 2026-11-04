@@ -400,6 +400,7 @@ pub fn released(app: &AppHandle, text: String, audio: Option<AskAudio>) {
         let pictures = captures
             .into_iter()
             .map(|c| Picture {
+                kind: c.kind,
                 name: c.name(),
                 of: c.of,
                 path: c.path,
@@ -493,6 +494,7 @@ pub fn released(app: &AppHandle, text: String, audio: Option<AskAudio>) {
                 timeline,
             },
             prompt: None,
+            moved: None,
         };
         super::ask(&app, question);
     });

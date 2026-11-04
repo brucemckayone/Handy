@@ -6,6 +6,7 @@
 
 use std::path::PathBuf;
 
+use super::capture::CaptureKind;
 use super::context::Terminal;
 use super::timeline::{self, Timeline, What};
 
@@ -30,6 +31,7 @@ You can read and search files and the web; you cannot edit files or run commands
 /// A grab or snap, attached to the question.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Picture {
+    pub kind: CaptureKind,
     /// "Grab 1".
     pub name: String,
     /// The window it shows.
@@ -336,6 +338,7 @@ mod tests {
     #[test]
     fn pictures_are_named_in_the_order_taken() {
         let picture = |name: &str, of: &str| Picture {
+            kind: CaptureKind::Grab,
             name: name.into(),
             of: of.into(),
             path: PathBuf::from(format!("C:/t/{name}.png")),

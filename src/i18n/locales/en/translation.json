@@ -370,6 +370,14 @@
           "ask": {
             "name": "Ask",
             "description": "Hold to ask Claude Code a question about what's on screen."
+          },
+          "ask_grab": {
+            "name": "Grab",
+            "description": "While asking, pick part of the screen to mark up and send with the question. Pressed on its own, starts a question."
+          },
+          "ask_snap": {
+            "name": "Snap",
+            "description": "While asking, sends the window under the mouse with the question. Pressed on its own, starts a question."
           }
         },
         "errors": {
@@ -1307,7 +1315,14 @@
       "failed": "No answer",
       "open": "Open",
       "openPanel": "Open the answer",
-      "cancel": "Stop asking"
+      "cancel": "Stop asking",
+      "grab": "grab",
+      "snap": "snap",
+      "handsFree": "hands-free",
+      "escAgain": "Esc again to cancel",
+      "send": "Send",
+      "grabN": "Grab {{n}}: {{of}}",
+      "snapN": "Snap {{n}}: {{of}}"
     },
     "panel": {
       "switchThread": "Switch thread",

@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import "./RecordingOverlay.css";
 import { commands, events } from "@/bindings";
 import type {
+  AskLiveEvent,
   StreamPhase,
   StreamPhaseEvent,
   StreamTextEvent,
@@ -61,6 +62,10 @@ const RecordingOverlay: React.FC = () => {
   // True once live text overflows the cap. A top overlay fades its top edge only
   // while overflowing, so the resting first line stays crisp flush under the pill.
   const [overflowing, setOverflowing] = useState(false);
+  // A spoken Ask adds a row: the capture keys while the Ask key is held, then
+  // (hands-free) its grabs and snaps and a Send button.
+  const [ask, setAsk] = useState<AskLiveEvent | null>(null);
+  const [handsFree, setHandsFree] = useState(false);
 
   const smoothedLevelsRef = useRef<number[]>(Array(16).fill(0));
   // Live-text scroll-back: the text region "sticks" to the newest line while the
@@ -134,6 +139,19 @@ const RecordingOverlay: React.FC = () => {
         setStreamText(event.payload);
       });
 
+      const unlistenAsk = await events.askLiveEvent.listen((event) => {
+        setAsk(event.payload.asking ? event.payload : null);
+      });
+
+      // Locked on (a tap, a capture key, or toggle mode): no key to let go of.
+      const unlistenRecording = await events.recordingStateEvent.listen(
+        (event) => {
+          const recordingPhase = event.payload.phase;
+          if (recordingPhase === "started") setHandsFree(false);
+          if (recordingPhase === "locked") setHandsFree(true);
+        },
+      );
+
       const unlistenPhase = await events.streamPhaseEvent.listen((event) => {
         const payload: StreamPhaseEvent = event.payload;
         setPhase(payload.phase);
@@ -173,6 +191,8 @@ const RecordingOverlay: React.FC = () => {
         unlistenReady();
         unlistenLevel();
         unlistenStream();
+        unlistenAsk();
+        unlistenRecording();
         unlistenPhase();
         unlistenModel();
         clearTimeout(modelLoadTimerRef.current);
@@ -285,6 +305,73 @@ const RecordingOverlay: React.FC = () => {
     </div>
   );
 
+  // Ask: the capture keys while held; hands-free, what was taken and Send.
+  const askRow = (show: boolean) =>
+    show &&
+    ask && (
+      <div className="sask">
+        {handsFree ? (
+          <>
+            <span className={`sask-note ${ask.cancel_armed ? "armed" : ""}`}>
+              {ask.cancel_armed
+                ? t("ask.pill.escAgain")
+                : t("ask.pill.handsFree")}
+            </span>
+            {ask.captures.length > 0 && (
+              <span className="sask-sep" aria-hidden="true" />
+            )}
+            {ask.captures.map((capture) => {
+              const name = t(
+                capture.kind === "grab" ? "ask.pill.grabN" : "ask.pill.snapN",
+                { n: capture.n, of: capture.of },
+              );
+              return (
+                <img
+                  key={capture.n}
+                  className="sask-thumb"
+                  src={capture.thumbnail}
+                  alt={name}
+                  title={name}
+                />
+              );
+            })}
+            <button className="sask-send" onClick={() => commands.sendAsk()}>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="m5 12 7-7 7 7M12 19V5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              {t("ask.pill.send")}
+            </button>
+          </>
+        ) : (
+          <>
+            <span className="sask-tag">{t("ask.pill.label")}</span>
+            {(ask.grab_key || ask.snap_key) && (
+              <span className="sask-sep" aria-hidden="true" />
+            )}
+            {ask.grab_key && (
+              <span className="sask-key">
+                <kbd>{ask.grab_key}</kbd>
+                {t("ask.pill.grab")}
+              </span>
+            )}
+            {ask.snap_key && (
+              <span className="sask-key">
+                <kbd>{ask.snap_key}</kbd>
+                {t("ask.pill.snap")}
+              </span>
+            )}
+          </>
+        )}
+      </div>
+    );
+
   // ---- Live overlay: a pill that sculpts open into a panel ----
   if (state === "streaming") {
     const hasText =
@@ -305,8 +392,8 @@ const RecordingOverlay: React.FC = () => {
         <div
           key={session}
           className={`scard ${open ? "open" : ""} ${collapsed ? "working" : ""} ${
-            isVisible ? "" : "leaving"
-          }`}
+            ask && !working ? "ask" : ""
+          } ${isVisible ? "" : "leaving"}`}
         >
           <div className="stext">
             <div className="stext-clip">
@@ -340,6 +427,7 @@ const RecordingOverlay: React.FC = () => {
                 true,
               )
             : listeningRow(open, true)}
+          {askRow(!working)}
         </div>
       </div>
     );
@@ -358,9 +446,12 @@ const RecordingOverlay: React.FC = () => {
       className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
     >
       <div
-        className={`scard compact ${working && isVisible ? "cworking" : ""}`}
+        className={`scard compact ${working && isVisible ? "cworking" : ""} ${
+          ask && !working ? "ask" : ""
+        }`}
       >
         {working ? workingRow(workLabel, true) : listeningRow(false, true)}
+        {askRow(!working)}
       </div>
     </div>
   );

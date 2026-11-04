@@ -7,6 +7,7 @@
 
 pub mod agents;
 pub mod answer;
+pub mod capture;
 pub mod claude;
 pub mod cli;
 pub mod commands;
@@ -570,7 +571,13 @@ impl AskManager {
         add_dirs.dedup();
         let request = claude::Request {
             prompt,
-            images: question.screen.screenshot.iter().cloned().collect(),
+            images: question
+                .screen
+                .screenshot
+                .iter()
+                .chain(question.screen.pictures.iter().map(|p| &p.path))
+                .cloned()
+                .collect(),
             session,
             model,
             cwd: self.workspace.clone(),
@@ -579,13 +586,13 @@ impl AskManager {
 
         let manager = Arc::clone(self);
         let thread_id = thread.id.clone();
-        let screenshot = question.screen.screenshot.clone();
+        let pictures = request.images.clone();
         let read_aloud = settings.read_aloud;
         std::thread::Builder::new()
             .name("ask".into())
             .spawn(move || {
                 manager.answer(&thread_id, &answer_id, request, generation, read_aloud);
-                if let Some(path) = screenshot {
+                for path in pictures {
                     let _ = std::fs::remove_file(path);
                 }
             })?;

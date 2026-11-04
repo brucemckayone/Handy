@@ -22,6 +22,16 @@ that part is only shown on screen, so markdown, code and file paths are fine the
 If you need to look something up, use your tools before writing anything. \
 You can read and search files and the web; you cannot edit files or run commands.";
 
+/// A grab or snap, attached to the question.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Picture {
+    /// "Grab 1".
+    pub name: String,
+    /// The window it shows.
+    pub of: String,
+    pub path: PathBuf,
+}
+
 /// What was on screen when the question was asked.
 #[derive(Debug, Clone, Default)]
 pub struct ScreenContext {
@@ -32,6 +42,8 @@ pub struct ScreenContext {
     /// Text read aloud in that window shortly before, with minutes ago.
     pub recent_reads: Vec<(String, u64)>,
     pub screenshot: Option<PathBuf>,
+    /// Grabs and snaps taken while asking, in order.
+    pub pictures: Vec<Picture>,
     /// Text piped in with `handy --ask`.
     pub input: Option<String>,
     /// What was done while the question was asked, if anything.
@@ -45,6 +57,7 @@ impl ScreenContext {
             && self.selection.is_none()
             && self.recent_reads.is_empty()
             && self.screenshot.is_none()
+            && self.pictures.is_empty()
             && self.input.is_none()
             && self.done().is_none()
     }
@@ -107,6 +120,17 @@ pub fn build(question: &str, context: &ScreenContext) -> String {
         if context.screenshot.is_some() {
             out.push_str("- A screenshot of the active window is attached.\n");
         }
+        if !context.pictures.is_empty() {
+            let names: Vec<String> = context
+                .pictures
+                .iter()
+                .map(|p| format!("{} ({})", p.name, p.of))
+                .collect();
+            out.push_str(&format!(
+                "- Pictures they took while asking are attached, in this order: {}.\n",
+                names.join(", ")
+            ));
+        }
         if let Some(done) = context.done() {
             for event in &done.events {
                 if let What::Selected { text, app } = &event.what {
@@ -168,6 +192,7 @@ mod tests {
             selection: Some("fn main() {}".into()),
             recent_reads: vec![("Some notes".into(), 2)],
             screenshot: Some(PathBuf::from("C:/t/shot.png")),
+            pictures: Vec::new(),
             input: Some("diff --git".into()),
             timeline: None,
         };
@@ -237,6 +262,24 @@ mod tests {
         assert!(prompt.contains("0.5  switched to  Terminal"));
         assert!(!prompt.contains("a [tag] after a word"));
         assert!(prompt.ends_with("Question: and here?\n"));
+    }
+
+    #[test]
+    fn pictures_are_named_in_the_order_taken() {
+        let picture = |name: &str, of: &str| Picture {
+            name: name.into(),
+            of: of.into(),
+            path: PathBuf::from(format!("C:/t/{name}.png")),
+        };
+        let context = ScreenContext {
+            pictures: vec![picture("Grab 1", "Grafana"), picture("Snap 2", "Terminal")],
+            ..Default::default()
+        };
+        let prompt = build("why is 1 slower than 2?", &context);
+        assert!(prompt.contains(
+            "- Pictures they took while asking are attached, in this order: Grab 1 (Grafana), Snap 2 (Terminal).\n"
+        ));
+        assert!(!prompt.contains("C:/t/"), "the pictures go in the message");
     }
 
     #[test]

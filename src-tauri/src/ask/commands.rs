@@ -1,6 +1,6 @@
 //! Commands for the Ask panel and the Ask settings page.
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use super::store::{Thread, ThreadListItem, Via};
 use super::{manager, NewQuestion};
@@ -44,6 +44,15 @@ pub fn set_ask_panel_thread(thread_id: Option<String>) {
 #[specta::specta]
 pub fn get_ask_pill_state() -> AskBusyEvent {
     crate::speech::pill::ask_state()
+}
+
+/// The pill's Send: the question being recorded is done.
+#[tauri::command]
+#[specta::specta]
+pub fn send_ask(app: AppHandle) {
+    if let Some(coordinator) = app.try_state::<crate::TranscriptionCoordinator>() {
+        coordinator.finish("ask", "pill");
+    }
 }
 
 /// Recent threads, newest first.

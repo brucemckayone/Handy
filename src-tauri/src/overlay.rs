@@ -53,12 +53,30 @@ const OVERLAY_HEIGHT: f64 = 50.0;
 const OVERLAY_STREAM_WIDTH: f64 = 400.0;
 const OVERLAY_STREAM_HEIGHT: f64 = 120.0;
 
+// An Ask adds a row under the controls (--ov-ask-h, 32) for the capture keys,
+// then its thumbnails and Send, and the card grows to fit them.
+const OVERLAY_ASK_WIDTH: f64 = 400.0;
+const OVERLAY_ASK_ROW: f64 = 34.0;
+
+/// The overlay is showing a spoken Ask, which needs the extra row.
+static ASK_MODE: AtomicBool = AtomicBool::new(false);
+
+/// Sizes the overlay for an Ask (or back for dictation) from its next show.
+pub fn set_ask_mode(on: bool) {
+    ASK_MODE.store(on, Ordering::Relaxed);
+}
+
 /// Overlay window size (logical) for a given UI state.
 fn overlay_dimensions(state: &str) -> (f64, f64) {
-    if state == "streaming" {
+    let (width, height) = if state == "streaming" {
         (OVERLAY_STREAM_WIDTH, OVERLAY_STREAM_HEIGHT)
     } else {
         (OVERLAY_WIDTH, OVERLAY_HEIGHT)
+    };
+    if ASK_MODE.load(Ordering::Relaxed) {
+        (width.max(OVERLAY_ASK_WIDTH), height + OVERLAY_ASK_ROW)
+    } else {
+        (width, height)
     }
 }
 

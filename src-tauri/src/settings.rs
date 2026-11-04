@@ -1173,6 +1173,31 @@ pub fn get_default_settings() -> AppSettings {
             current_binding: ask_shortcut.to_string(),
         },
     );
+    // The same modifiers as Ask, so either key is one more finger while asking.
+    #[cfg(target_os = "macos")]
+    let (grab_shortcut, snap_shortcut) = ("ctrl+option+g", "ctrl+option+s");
+    #[cfg(not(target_os = "macos"))]
+    let (grab_shortcut, snap_shortcut) = ("ctrl+alt+g", "ctrl+alt+s");
+    bindings.insert(
+        "ask_grab".to_string(),
+        ShortcutBinding {
+            id: "ask_grab".to_string(),
+            name: "Grab for Ask".to_string(),
+            description: "Pick part of the screen to mark up and send with the question.".to_string(),
+            default_binding: grab_shortcut.to_string(),
+            current_binding: grab_shortcut.to_string(),
+        },
+    );
+    bindings.insert(
+        "ask_snap".to_string(),
+        ShortcutBinding {
+            id: "ask_snap".to_string(),
+            name: "Snap for Ask".to_string(),
+            description: "Send the window under the mouse with the question.".to_string(),
+            default_binding: snap_shortcut.to_string(),
+            current_binding: snap_shortcut.to_string(),
+        },
+    );
 
     AppSettings {
         settings_schema_version: default_settings_schema_version(),

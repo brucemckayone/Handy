@@ -1,5 +1,6 @@
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use crate::apple_intelligence;
+use crate::ask::capture::CaptureKind;
 use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, SoundType};
 use crate::audio_toolkit::VadPolicy;
 use crate::managers::audio::{recording_error_type, AudioRecordingManager};
@@ -448,9 +449,13 @@ impl ShortcutAction for TranscribeAction {
     fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
         let start_time = Instant::now();
         debug!("TranscribeAction::start called for binding: {}", binding_id);
+        crate::overlay::set_ask_mode(self.ask);
         if self.ask {
             // The window being asked about, before anything else can move focus.
             crate::ask::voice::pressed(app);
+        } else {
+            // An Ask that came to nothing is over now.
+            crate::ask::voice::cancelled(app);
         }
 
         // Load model in the background
@@ -817,6 +822,7 @@ impl ShortcutAction for TranscribeAction {
                                 utils::hide_recording_overlay(&ah);
                                 set_tray_state(&ah, TrayIconState::Idle);
                                 let outcome = if processed.final_text.trim().is_empty() {
+                                    crate::ask::voice::cancelled(&ah);
                                     empty_outcome(input_silent)
                                 } else {
                                     crate::ask::voice::released(
@@ -983,12 +989,26 @@ struct CancelAction;
 
 impl ShortcutAction for CancelAction {
     fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
-        utils::cancel_current_operation(app);
+        // An Ask with grabs or snaps takes a second Esc.
+        if crate::ask::voice::cancel_pressed(app) {
+            utils::cancel_current_operation(app);
+        }
     }
 
     fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
         // Nothing to do on stop for cancel
     }
+}
+
+// Ask's grab and snap keys
+struct AskCaptureAction(CaptureKind);
+
+impl ShortcutAction for AskCaptureAction {
+    fn start(&self, app: &AppHandle, _binding_id: &str, shortcut_str: &str) {
+        crate::ask::capture::pressed(app, self.0, shortcut_str);
+    }
+
+    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {}
 }
 
 // Test Action
@@ -1037,6 +1057,14 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
             post_process: false,
             ask: true,
         }) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "ask_grab".to_string(),
+        Arc::new(AskCaptureAction(CaptureKind::Grab)) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "ask_snap".to_string(),
+        Arc::new(AskCaptureAction(CaptureKind::Snap)) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "cancel".to_string(),

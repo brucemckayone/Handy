@@ -199,8 +199,22 @@ enum Effect {
 /// Commands processed sequentially by the coordinator thread.
 enum Command {
     Input(InputEvent),
-    Cancel { recording_was_active: bool },
+    Cancel {
+        recording_was_active: bool,
+    },
     ProcessingFinished,
+    /// Keep `binding_id` recording without its key, starting it if nothing
+    /// records; `then` hears whether it is recording now.
+    HandsFree {
+        binding_id: String,
+        hotkey_string: String,
+        then: Box<dyn FnOnce(bool) + Send>,
+    },
+    /// End `binding_id`'s recording as a press ends a locked one.
+    Finish {
+        binding_id: String,
+        hotkey_string: String,
+    },
 }
 
 /// Decide whether a key-up should be deferred (so auto-repeat can cancel it)
@@ -492,6 +506,41 @@ impl CoordinatorState {
         None
     }
 
+    /// Recording carries on without the key: a running session locks as a
+    /// tap would, and with nothing recording one starts locked. Ignored while
+    /// another binding records or the pipeline is busy.
+    fn on_hands_free(
+        &mut self,
+        binding_id: String,
+        hotkey_string: String,
+        now: Instant,
+    ) -> Option<Effect> {
+        match &self.stage {
+            Stage::Idle => Some(self.begin_recording(binding_id, hotkey_string, now, true)),
+            Stage::Recording(id) if *id == binding_id => {
+                // A release on its way would end it; the key is no longer needed.
+                self.pending_release = None;
+                if let Some(hold) = &mut self.hold {
+                    hold.locked = true;
+                }
+                None
+            }
+            _ => {
+                debug!("Ignoring hands-free for '{binding_id}': not idle or recording it");
+                None
+            }
+        }
+    }
+
+    /// Ends `binding_id`'s recording, held or locked, as its key would.
+    fn on_finish(&mut self, binding_id: String, hotkey_string: String) -> Option<Effect> {
+        if !matches!(&self.stage, Stage::Recording(id) if *id == binding_id) {
+            return None;
+        }
+        self.pending_release = None;
+        Some(self.begin_processing(binding_id, hotkey_string))
+    }
+
     fn on_cancel(&mut self, recording_was_active: bool) {
         self.pending_release = None;
         // An explicit cancel abandons any remembered start too — the user
@@ -626,6 +675,28 @@ impl TranscriptionCoordinator {
                                 run_effect(&app, &mut state, effect);
                             }
                         }
+                        Command::HandsFree {
+                            binding_id,
+                            hotkey_string,
+                            then,
+                        } => {
+                            if let Some(effect) = state.on_hands_free(
+                                binding_id.clone(),
+                                hotkey_string,
+                                Instant::now(),
+                            ) {
+                                run_effect(&app, &mut state, effect);
+                            }
+                            then(matches!(&state.stage, Stage::Recording(id) if *id == binding_id));
+                        }
+                        Command::Finish {
+                            binding_id,
+                            hotkey_string,
+                        } => {
+                            if let Some(effect) = state.on_finish(binding_id, hotkey_string) {
+                                run_effect(&app, &mut state, effect);
+                            }
+                        }
                     }
                     if !was_locked && state.is_recording_locked() {
                         emit_recording_phase(&app, RecordingPhase::Locked);
@@ -695,6 +766,36 @@ impl TranscriptionCoordinator {
             }))
             .is_err()
         {
+            warn!("Transcription coordinator channel closed");
+        }
+    }
+
+    /// Keeps `binding_id` recording after its key comes up, or starts it
+    /// that way when nothing records. `then` runs on the coordinator thread,
+    /// told whether `binding_id` is recording; it must not block.
+    pub fn hands_free(
+        &self,
+        binding_id: &str,
+        hotkey_string: &str,
+        then: impl FnOnce(bool) + Send + 'static,
+    ) {
+        let command = Command::HandsFree {
+            binding_id: binding_id.to_string(),
+            hotkey_string: hotkey_string.to_string(),
+            then: Box::new(then),
+        };
+        if self.tx.send(command).is_err() {
+            warn!("Transcription coordinator channel closed");
+        }
+    }
+
+    /// Ends `binding_id`'s recording if it is the one recording.
+    pub fn finish(&self, binding_id: &str, hotkey_string: &str) {
+        let command = Command::Finish {
+            binding_id: binding_id.to_string(),
+            hotkey_string: hotkey_string.to_string(),
+        };
+        if self.tx.send(command).is_err() {
             warn!("Transcription coordinator channel closed");
         }
     }
@@ -1669,5 +1770,129 @@ mod tests {
             "held 400ms since the real key-down: must stop, not lock"
         );
         assert_eq!(state.stage, Stage::Processing);
+    }
+
+    // ---------------------------------------------------------------------
+    // Hands-free: Ask's capture keys keep the question recording without its
+    // key, and the pill's Send ends it.
+    // ---------------------------------------------------------------------
+
+    fn hands_free(state: &mut CoordinatorState, now: Instant) -> Option<Effect> {
+        state.on_hands_free(BINDING.to_string(), "ctrl+alt+g".to_string(), now)
+    }
+
+    /// Held, then a capture key: the release that follows no longer stops.
+    #[test]
+    fn hands_free_locks_a_held_recording() {
+        let mode = ShortcutActivation::HoldOrToggle;
+        let mut state = CoordinatorState::new();
+        let t0 = Instant::now();
+
+        state.on_input(input(mode, true), t0);
+        assert!(hands_free(&mut state, t0 + ms(900)).is_none());
+        assert!(state.is_recording_locked());
+
+        assert!(state.on_input(input(mode, false), t0 + ms(1500)).is_none());
+        assert!(state.on_grace_expired().is_none());
+        assert_eq!(state.stage, Stage::Recording(BINDING.to_string()));
+
+        // A tap of the Ask key sends it.
+        assert!(matches!(
+            state.on_input(input(mode, true), t0 + ms(6000)),
+            Some(Effect::Stop { .. })
+        ));
+    }
+
+    /// The key came up just before the capture key arrived: its deferred
+    /// release is dropped rather than ending the question.
+    #[test]
+    fn hands_free_drops_a_release_waiting_out_its_grace() {
+        let mode = ShortcutActivation::PushToTalk;
+        let mut state = CoordinatorState::new();
+        let t0 = Instant::now();
+
+        state.on_input(input(mode, true), t0);
+        state.on_input(input(mode, false), t0 + ms(900));
+        assert!(state.grace_deadline().is_some());
+        hands_free(&mut state, t0 + ms(920));
+        assert!(state.grace_deadline().is_none());
+        assert!(state.on_grace_expired().is_none());
+        assert!(state.is_recording_locked());
+    }
+
+    /// With nothing recording, a capture key starts the question locked.
+    #[test]
+    fn hands_free_from_idle_starts_locked() {
+        let mut state = CoordinatorState::new();
+        let t0 = Instant::now();
+
+        assert!(matches!(
+            hands_free(&mut state, t0),
+            Some(Effect::Start { binding_id, .. }) if binding_id == BINDING
+        ));
+        assert!(state.is_recording_locked());
+        assert!(state
+            .on_input(input(ShortcutActivation::PushToTalk, false), t0 + ms(50))
+            .is_none());
+        assert!(state.grace_deadline().is_none());
+    }
+
+    /// Another binding recording, or a busy pipeline: the capture key changes nothing.
+    #[test]
+    fn hands_free_leaves_other_sessions_alone() {
+        let mut state = CoordinatorState::new();
+        let t0 = Instant::now();
+        state.on_input(
+            InputEvent {
+                binding_id: "transcribe_with_post_process".to_string(),
+                ..input(ShortcutActivation::HoldOrToggle, true)
+            },
+            t0,
+        );
+        assert!(hands_free(&mut state, t0 + ms(100)).is_none());
+        assert!(!state.is_locked());
+        assert_eq!(
+            state.stage,
+            Stage::Recording("transcribe_with_post_process".to_string())
+        );
+
+        let mut busy = CoordinatorState::new();
+        hold_or_toggle_into_processing(&mut busy, t0);
+        assert!(hands_free(&mut busy, t0 + ms(2000)).is_none());
+        assert_eq!(busy.stage, Stage::Processing);
+        assert!(busy.pending_press.is_none());
+    }
+
+    /// Send ends the question, locked or held, and nothing else.
+    #[test]
+    fn finish_stops_only_its_own_recording() {
+        let mut state = CoordinatorState::new();
+        let t0 = Instant::now();
+        assert!(state
+            .on_finish(BINDING.to_string(), String::new())
+            .is_none());
+
+        hands_free(&mut state, t0);
+        assert!(matches!(
+            state.on_finish(BINDING.to_string(), String::new()),
+            Some(Effect::Stop { .. })
+        ));
+        assert_eq!(state.stage, Stage::Processing);
+
+        let mut other = CoordinatorState::new();
+        other.on_input(
+            InputEvent {
+                binding_id: "transcribe_with_post_process".to_string(),
+                ..input(ShortcutActivation::HoldOrToggle, true)
+            },
+            t0,
+        );
+        assert!(other
+            .on_finish(BINDING.to_string(), String::new())
+            .is_none());
+        assert_eq!(
+            other.stage,
+            Stage::Recording("transcribe_with_post_process".to_string())
+        );
     }
 }

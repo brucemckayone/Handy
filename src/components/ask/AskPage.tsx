@@ -69,6 +69,8 @@ export const AskPage: React.FC = () => {
     <div className="max-w-3xl w-full mx-auto space-y-6">
       <SettingsGroup title={t("ask.settings.askGroup")}>
         <ShortcutInput shortcutId="ask" grouped />
+        <ShortcutInput shortcutId="ask_grab" grouped />
+        <ShortcutInput shortcutId="ask_snap" grouped />
         <SettingContainer
           title={t("ask.settings.claude")}
           description={t("ask.settings.claudeDescription")}

@@ -113,6 +113,7 @@ pub fn cancel_current_operation(app: &AppHandle) {
     if let Some(meeting) = crate::meeting::manager(app) {
         meeting.dictation_cancelled();
     }
+    crate::ask::voice::cancelled(app);
 
     // Abandon any live streaming transcription, and stop a transcription
     // already in progress

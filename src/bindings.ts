@@ -1274,6 +1274,12 @@ async getAskPillState() : Promise<AskBusyEvent> {
     return await TAURI_INVOKE("get_ask_pill_state");
 },
 /**
+ * The pill's Send: the question being recorded is done.
+ */
+async sendAsk() : Promise<void> {
+    await TAURI_INVOKE("send_ask");
+},
+/**
  * Recent threads, newest first.
  */
 async listAskThreads() : Promise<Result<ThreadListItem[], string>> {
@@ -1405,6 +1411,7 @@ export const events = __makeEvents__<{
 askBusyEvent: AskBusyEvent,
 askDeletedEvent: AskDeletedEvent,
 askDeltaEvent: AskDeltaEvent,
+askLiveEvent: AskLiveEvent,
 askOpenEvent: AskOpenEvent,
 askThreadEvent: AskThreadEvent,
 historyUpdatePayload: HistoryUpdatePayload,
@@ -1426,6 +1433,7 @@ transcriptionJob: TranscriptionJob
 askBusyEvent: "ask-busy-event",
 askDeletedEvent: "ask-deleted-event",
 askDeltaEvent: "ask-delta-event",
+askLiveEvent: "ask-live-event",
 askOpenEvent: "ask-open-event",
 askThreadEvent: "ask-thread-event",
 historyUpdatePayload: "history-update-payload",
@@ -1588,6 +1596,26 @@ export type AskDeletedEvent = { thread_id: string }
  * before Claude used a tool).
  */
 export type AskDeltaEvent = { thread_id: string; answer_id: string; reset: boolean; text: string }
+/**
+ * What the recording pill shows of the question being asked.
+ */
+export type AskLiveEvent = { 
+/**
+ * A spoken question is being recorded.
+ */
+asking: boolean; 
+/**
+ * Grabs and snaps so far, in order.
+ */
+captures: CaptureView[]; 
+/**
+ * Esc was pressed once: the next one cancels.
+ */
+cancel_armed: boolean; 
+/**
+ * The keys that grab and snap, e.g. "G", shown with Ctrl+Alt held.
+ */
+grab_key: string | null; snap_key: string | null }
 export type AskError = { code: AskErrorCode; detail: string | null }
 export type AskErrorCode = "claude_not_found" | "timed_out" | "failed"
 /**
@@ -1655,6 +1683,7 @@ export type BindingResponse = { success: boolean; binding: ShortcutBinding | nul
 export type Bookmark = { start_ms: number; end_ms: number }
 export type BookmarkNote = { start_ms: number; label: string }
 export type CallApp = "teams" | "zoom" | "browser"
+export type CaptureKind = "grab" | "snap"
 /**
  * Something that went wrong while recording, shown with the meeting.
  */
@@ -1668,6 +1697,10 @@ track: string;
  * `device_missing_used_default`; the UI words it.
  */
 kind: string }
+/**
+ * A capture as the pill shows it.
+ */
+export type CaptureView = { kind: CaptureKind; n: number; of: string; thumbnail: string }
 /**
  * Script applied to Mandarin and Cantonese output. Traditional carries its region
  * (Taiwan vs Hong Kong forms, e.g. 裡/裏) rather than guessing it.

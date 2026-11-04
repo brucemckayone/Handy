@@ -908,6 +908,7 @@ pub fn run(mut cli_args: CliArgs) {
             ask::commands::get_ask_panel_thread,
             ask::commands::set_ask_panel_thread,
             ask::commands::get_ask_pill_state,
+            ask::commands::send_ask,
             ask::commands::list_ask_threads,
             ask::commands::get_ask_thread,
             ask::commands::ask_typed,
@@ -942,6 +943,7 @@ pub fn run(mut cli_args: CliArgs) {
             ask::AskDeletedEvent,
             ask::AskBusyEvent,
             ask::panel::AskOpenEvent,
+            ask::voice::AskLiveEvent,
         ]);
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds

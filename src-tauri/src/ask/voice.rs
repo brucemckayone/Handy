@@ -1,21 +1,25 @@
 //! A spoken question from the Ask shortcut. On press: note the window in
 //! front (and start its screenshot), and watch what is selected and which
-//! window is in front while the key is down. On release, once transcribed:
-//! time the words if anything was done meanwhile, gather what else was on
-//! screen, and ask.
+//! window is in front while the key is down. Grabs and snaps taken meanwhile
+//! wait here too. On release, once transcribed: time the words if anything
+//! was done meanwhile, gather what else was on screen, and ask.
 
 use log::{debug, warn};
 use once_cell::sync::Lazy;
+use serde::{Deserialize, Serialize};
+use specta::Type;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
+use tauri_specta::Event as _;
 
 use super::agents::{self, Agent};
-use super::prompt::ScreenContext;
+use super::capture::{Capture, CaptureView};
+use super::prompt::{Picture, ScreenContext};
 use super::store::Via;
-use super::timeline::{Spoken, Timeline};
+use super::timeline::{Event, Spoken, Timeline, What};
 use super::watch::{Watch, Watched};
 use super::window::{self, WindowInfo};
 use super::NewQuestion;
@@ -31,6 +35,28 @@ struct Pending {
     /// The key press: zero on the question's clock.
     started: Instant,
     watch: Option<Watch>,
+    captures: Vec<Capture>,
+    /// Esc was pressed once with captures taken; another soon cancels.
+    cancel_armed: Option<Instant>,
+    /// The capture keys as the pill shows them.
+    keys: (Option<String>, Option<String>),
+}
+
+/// With captures taken, the second Esc must come within this to cancel.
+const CANCEL_AGAIN: Duration = Duration::from_secs(3);
+
+/// What the recording pill shows of the question being asked.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Type, tauri_specta::Event)]
+pub struct AskLiveEvent {
+    /// A spoken question is being recorded.
+    pub asking: bool,
+    /// Grabs and snaps so far, in order.
+    pub captures: Vec<CaptureView>,
+    /// Esc was pressed once: the next one cancels.
+    pub cancel_armed: bool,
+    /// The keys that grab and snap, e.g. "G", shown with Ctrl+Alt held.
+    pub grab_key: Option<String>,
+    pub snap_key: Option<String>,
 }
 
 /// The recording a spoken question came from, to time its words.
@@ -60,19 +86,45 @@ pub fn pressed(app: &AppHandle) {
         })
     });
     let watch = cfg!(windows).then(|| Watch::start(started, window.clone()));
+    let bindings = crate::settings::get_settings(app).bindings;
+    let key = |id: &str| bindings.get(id).and_then(|b| last_key(&b.current_binding));
     let pending = Pending {
         window,
         screenshot,
         agent,
         started,
         watch,
+        captures: Vec::new(),
+        cancel_armed: None,
+        keys: (key("ask_grab"), key("ask_snap")),
     };
     if let Ok(mut slot) = PENDING.lock() {
         // An older press's screenshot is no longer wanted.
         if let Some(old) = slot.replace(pending) {
             discard(old);
         }
+        show(app, slot.as_ref());
     }
+}
+
+/// The key a binding ends in, as a keycap shows it: "ctrl+alt+g" is "G".
+fn last_key(binding: &str) -> Option<String> {
+    let key = binding.rsplit('+').next()?.trim();
+    let mut chars = key.chars();
+    let first = chars.next()?;
+    Some(first.to_uppercase().chain(chars).collect())
+}
+
+/// Tells the recording pill where the question is.
+fn show(app: &AppHandle, pending: Option<&Pending>) {
+    let event = pending.map_or_else(AskLiveEvent::default, |p| AskLiveEvent {
+        asking: true,
+        captures: p.captures.iter().map(CaptureView::from).collect(),
+        cancel_armed: p.cancel_armed.is_some_and(|at| at.elapsed() < CANCEL_AGAIN),
+        grab_key: p.keys.0.clone(),
+        snap_key: p.keys.1.clone(),
+    });
+    let _ = event.emit(app);
 }
 
 fn discard(pending: Pending) {
@@ -82,6 +134,67 @@ fn discard(pending: Pending) {
                 let _ = std::fs::remove_file(path);
             }
         });
+    }
+    for capture in pending.captures {
+        let _ = std::fs::remove_file(capture.path);
+    }
+}
+
+/// A grab or snap was taken: it goes with the question. Numbered and timed
+/// here, so the order is the order they arrive in.
+pub fn add_capture(app: &AppHandle, mut capture: Capture) {
+    let Ok(mut slot) = PENDING.lock() else { return };
+    let Some(pending) = slot.as_mut() else {
+        // The question ended while it was being taken.
+        let _ = std::fs::remove_file(&capture.path);
+        return;
+    };
+    capture.n = pending.captures.len() as u32 + 1;
+    capture.at = pending.started.elapsed().as_millis() as u64;
+    pending.captures.push(capture);
+    show(app, slot.as_ref());
+}
+
+/// Esc while asking. With nothing taken it cancels at once; with grabs or
+/// snaps it takes a second Esc, so one slip doesn't lose them. Returns
+/// whether to cancel now.
+pub fn cancel_pressed(app: &AppHandle) -> bool {
+    let Ok(mut slot) = PENDING.lock() else {
+        return true;
+    };
+    let Some(pending) = slot.as_mut() else {
+        return true;
+    };
+    if pending.captures.is_empty()
+        || pending
+            .cancel_armed
+            .is_some_and(|at| at.elapsed() < CANCEL_AGAIN)
+    {
+        return true;
+    }
+    pending.cancel_armed = Some(Instant::now());
+    show(app, slot.as_ref());
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(CANCEL_AGAIN);
+        if let Ok(slot) = PENDING.lock() {
+            if slot.is_some() {
+                show(&app, slot.as_ref());
+            }
+        }
+    });
+    false
+}
+
+/// The question was cancelled, or came to nothing: what was taken for it goes.
+pub fn cancelled(app: &AppHandle) {
+    let pending = PENDING.lock().ok().and_then(|mut slot| slot.take());
+    if let Some(pending) = pending {
+        if let Some(watch) = &pending.watch {
+            watch.stop();
+        }
+        discard(pending);
+        show(app, None);
     }
 }
 
@@ -124,16 +237,49 @@ pub fn released(app: &AppHandle, text: String, audio: Option<AskAudio>) {
     let app = app.clone();
     // Copying the selection waits for the shortcut's keys to be let go.
     std::thread::spawn(move || {
-        let (window, screenshot, agent, started, watched) = match pending {
+        show(&app, None);
+        let (window, screenshot, agent, started, mut watched, captures) = match pending {
             Some(p) => (
                 p.window,
                 p.screenshot.and_then(|h| h.join().ok().flatten()),
                 p.agent.and_then(|h| h.join().ok().flatten()),
                 p.started,
                 p.watch.map(Watch::finish).unwrap_or_default(),
+                p.captures,
             ),
-            None => (None, None, None, Instant::now(), Watched::default()),
+            None => (
+                None,
+                None,
+                None,
+                Instant::now(),
+                Watched::default(),
+                Vec::new(),
+            ),
         };
+        // Pictures picked by hand say more than the window's own screenshot.
+        let screenshot = screenshot.filter(|path| {
+            let keep = captures.is_empty();
+            if !keep {
+                let _ = std::fs::remove_file(path);
+            }
+            keep
+        });
+        watched.events.extend(captures.iter().map(|c| Event {
+            at: c.at,
+            what: What::Capture {
+                name: c.name(),
+                of: c.of.clone(),
+            },
+        }));
+        watched.events.sort_by_key(|e| e.at);
+        let pictures = captures
+            .into_iter()
+            .map(|c| Picture {
+                name: c.name(),
+                of: c.of,
+                path: c.path,
+            })
+            .collect();
         let timeline = (!watched.events.is_empty()).then(|| Timeline {
             words: audio.map(|a| spoken(&app, a, started)).unwrap_or_default(),
             events: watched.events,
@@ -179,10 +325,24 @@ pub fn released(app: &AppHandle, text: String, audio: Option<AskAudio>) {
                 input: None,
                 recent_reads,
                 screenshot,
+                pictures,
                 timeline,
             },
             prompt: None,
         };
         super::ask(&app, question);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn keycaps_show_the_last_key_of_a_binding() {
+        assert_eq!(last_key("ctrl+alt+g").as_deref(), Some("G"));
+        assert_eq!(last_key("ctrl+option+s").as_deref(), Some("S"));
+        assert_eq!(last_key("ctrl+alt+f9").as_deref(), Some("F9"));
+        assert_eq!(last_key(""), None);
+    }
 }
